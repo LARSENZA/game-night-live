@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "game-night-live",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-08-25",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "game-night-live-db",
+      "database_id": "bd7ac143-da01-4ef6-ba47-5c2c8bb08b51",
+      "migrations_dir": "./drizzle",
+    },
+  ],
+}
