@@ -14,6 +14,14 @@ export const metadata: Metadata = {
     canonical: "/",
   },
   openGraph: {
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "Game Night ZA — seven team games built for live streams",
+      },
+    ],
     type: "website",
     url: "/",
     siteName: "Game Night ZA",
@@ -22,10 +30,11 @@ export const metadata: Metadata = {
       "Seven host-controlled team games built for TikTok Live and shared screens.",
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: "Game Night ZA",
     description:
       "Seven host-controlled team games built for TikTok Live and shared screens.",
+    images: ["/og-image.png"],
   },
   icons: {
     icon: "/favicon.svg",

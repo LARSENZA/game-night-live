@@ -1,5 +1,7 @@
 # Game Night ZA
 
+![Game Night ZA](./public/og-image.png)
+
 A host-controlled party-game platform built for TikTok Live and other shared-screen game nights. One host opens the site, shares the same browser window and runs the entire game while players participate through the livestream.
 
 **Live application:** [gamenightza.com](https://gamenightza.com)  
@@ -20,26 +22,26 @@ A host-controlled party-game platform built for TikTok Live and other shared-scr
 
 ## Game Modes
 
-| Mode | How it works |
-| --- | --- |
-| Spelling Bee | Spell the displayed word correctly before moving to the next prompt. |
-| Taboo | Describe the target without using any of the forbidden words. |
-| Music Round | The host awards points for identifying the title, artist and lyrics. |
-| Password | Three clues are entered and hidden one at a time, then revealed together for Player 4. |
-| Bomb | Players answer around the active letter rule before the hidden fuse expires. |
-| Fifth Grader | General-knowledge questions with host-controlled answer reveals. |
-| Wavelength | Teams estimate a hidden target on a 0–10 scale during a 60-second timed round. |
+| Mode         | How it works                                                                           |
+| ------------ | -------------------------------------------------------------------------------------- |
+| Spelling Bee | Spell the displayed word correctly before moving to the next prompt.                   |
+| Taboo        | Describe the target without using any of the forbidden words.                          |
+| Music Round  | The host awards points for identifying the title, artist and lyrics.                   |
+| Password     | Three clues are entered and hidden one at a time, then revealed together for Player 4. |
+| Bomb         | Players answer around the active letter rule before the hidden fuse expires.           |
+| Fifth Grader | General-knowledge questions with host-controlled answer reveals.                       |
+| Wavelength   | Teams estimate a hidden target on a 0–10 scale during a 60-second timed round.         |
 
 ## Technology
 
-| Layer | Technology |
-| --- | --- |
-| Interface | React 19, TypeScript, CSS |
+| Layer                 | Technology                                             |
+| --------------------- | ------------------------------------------------------ |
+| Interface             | React 19, TypeScript, CSS                              |
 | Application framework | Next.js App Router API surface through Vinext and Vite |
-| Server runtime | Cloudflare Workers |
-| Database | Cloudflare D1 (SQLite) |
-| ORM and migrations | Drizzle ORM and Drizzle Kit |
-| Deployment | Cloudflare Workers Builds connected to GitHub |
+| Server runtime        | Cloudflare Workers                                     |
+| Database              | Cloudflare D1 (SQLite)                                 |
+| ORM and migrations    | Drizzle ORM and Drizzle Kit                            |
+| Deployment            | Cloudflare Workers Builds connected to GitHub          |
 
 ## Architecture
 
@@ -110,11 +112,11 @@ Create a room, then select **Content** from the host view. The host can:
 
 ## Stream Controls
 
-| Key | Action |
-| --- | --- |
+| Key | Action                        |
+| --- | ----------------------------- |
 | `G` | Open or close the game picker |
-| `F` | Enter or exit fullscreen |
-| `H` | Hide or show host controls |
+| `F` | Enter or exit fullscreen      |
+| `H` | Hide or show host controls    |
 
 ## Project Status
 
