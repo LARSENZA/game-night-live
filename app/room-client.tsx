@@ -22,9 +22,9 @@ function metadata(state: GameState) {
   }
 }
 function remaining(state: GameState, now: number) {
-  return state.timer.running && state.timer.endsAt && now
-    ? Math.max(0, Math.ceil((state.timer.endsAt - now) / 1000))
-    : 0;
+  if (state.timer.running && state.timer.endsAt && now)
+    return Math.max(0, Math.ceil((state.timer.endsAt - now) / 1000));
+  return Math.max(0, Number(state.timer.pausedRemaining) || 0);
 }
 function formatTime(seconds: number) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
@@ -49,6 +49,7 @@ export function RoomClient({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const previousScore = useRef<{ A: number; B: number } | null>(null);
   const previousTick = useRef<number | null>(null);
+  const previousSpokenWord = useRef("");
 
   const load = useCallback(async () => {
     try {
@@ -89,14 +90,23 @@ export function RoomClient({
     if (!room || !room.state.timer.running || tickSeconds <= 0) return;
     if (previousTick.current !== tickSeconds) {
       previousTick.current = tickSeconds;
-      if (
-        soundReady &&
-        (room.state.currentGame === "wavelength" ||
-          room.state.currentGame === "bomb")
-      )
-        playTick(tickSeconds <= 10);
+      if (soundReady) playTick(tickSeconds <= 10);
     }
   }, [tickSeconds, room, soundReady]);
+
+  useEffect(() => {
+    if (
+      role !== "host" ||
+      room?.state.currentGame !== "spelling" ||
+      !room.state.currentContent?.prompt
+    )
+      return;
+    const word = room.state.currentContent.prompt;
+    if (previousSpokenWord.current === word) return;
+    previousSpokenWord.current = word;
+    const speakDelay = window.setTimeout(() => speakWord(word), 180);
+    return () => window.clearTimeout(speakDelay);
+  }, [room?.state.currentContent?.prompt, room?.state.currentGame, role]);
 
   useEffect(() => {
     const update = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -353,53 +363,314 @@ function GameView({
   setGuess: (v: number) => void;
 }) {
   const game = state.currentGame!;
+  const [spellingFeedback, setSpellingFeedback] = useState<
+    "correct" | "wrong" | null
+  >(null);
+
+  const [tabooFeedback, setTabooFeedback] = useState<
+    "correct" | "wrong" | null
+  >(null);
+
+  const [answeredTaboo, setAnsweredTaboo] = useState<{
+    prompt: string;
+    forbidden: string[];
+  }>({
+    prompt: "",
+    forbidden: [],
+  });
+  const [triviaFeedback, setTriviaFeedback] = useState<
+    "correct" | "wrong" | null
+  >(null);
+
+  const [answeredTrivia, setAnsweredTrivia] = useState({
+    category: "",
+    question: "",
+    answer: "",
+  });
+
+  function answerTrivia(result: "correct" | "wrong") {
+    if (triviaFeedback) return;
+
+    setAnsweredTrivia({
+      category: state.currentContent?.category || "",
+      question: state.currentContent?.prompt || "",
+      answer: state.currentContent?.answer || "",
+    });
+
+    setTriviaFeedback(result);
+
+    if (result === "wrong") {
+      playWrong();
+    }
+
+    void act({
+      type: result === "correct" ? "correct" : "pass",
+    });
+
+    window.setTimeout(() => {
+      setTriviaFeedback(null);
+      setAnsweredTrivia({
+        category: "",
+        question: "",
+        answer: "",
+      });
+    }, 650);
+  }
+
+  const [rollingBombDie, setRollingBombDie] = useState(false);
+
+  function rollBombDie() {
+    if (rollingBombDie) return;
+
+    setRollingBombDie(true);
+
+    window.setTimeout(() => {
+      void act({ type: "bombRoll" });
+      setRollingBombDie(false);
+    }, 900);
+  }
+
+  function answerTaboo(result: "correct" | "wrong") {
+    if (tabooFeedback) return;
+
+    setAnsweredTaboo({
+      prompt: state.currentContent?.prompt || "",
+      forbidden: (meta.taboo as string[]) || [],
+    });
+
+    setTabooFeedback(result);
+
+    if (result === "wrong") {
+      playWrong();
+    }
+
+    void act({
+      type: result === "correct" ? "correct" : "pass",
+    });
+
+    window.setTimeout(() => {
+      setTabooFeedback(null);
+      setAnsweredTaboo({
+        prompt: "",
+        forbidden: [],
+      });
+    }, 650);
+  }
+
+  const [answeredWord, setAnsweredWord] = useState("");
+
+  function answerSpelling(result: "correct" | "wrong") {
+    if (spellingFeedback) return;
+
+    setAnsweredWord(state.currentContent?.prompt || "");
+    setSpellingFeedback(result);
+
+    if (result === "wrong") {
+      playWrong();
+    }
+
+    // Update the score and prepare the next word immediately.
+    // The answered word remains displayed during the animation.
+    void act({
+      type: result === "correct" ? "correct" : "pass",
+    });
+
+    window.setTimeout(() => {
+      setSpellingFeedback(null);
+      setAnsweredWord("");
+    }, 650);
+  }
   return (
-    <div className={`game-panel ${game}`}>
+    <div
+      className={`game-panel ${game} ${
+        game === "spelling" && spellingFeedback
+          ? `spelling-feedback-${spellingFeedback}`
+          : ""
+      } ${
+        game === "taboo" && tabooFeedback
+          ? `taboo-feedback-${tabooFeedback}`
+          : ""
+      }
+      ${
+        game === "trivia" && triviaFeedback
+          ? `trivia-feedback-${triviaFeedback}`
+          : ""
+      }`}
+    >
       <div className="game-heading">
         <span>{GAMES.find((g) => g.id === game)?.name}</span>
         {state.timer.total > 0 && (
-          <div
-            className={`timer ${seconds <= 10 && seconds > 0 ? "urgent" : ""}`}
-          >
-            {formatTime(seconds)}
+          <div className="timer-tools">
+            {game === "bomb" ? (
+              <div className="bomb-fuse-status">
+                {state.timer.running
+                  ? "💣 Fuse active"
+                  : seconds > 0
+                    ? "⏸ Fuse paused"
+                    : "💥 Exploded"}
+              </div>
+            ) : (
+              <div
+                className={`timer ${
+                  seconds <= 10 && seconds > 0 ? "urgent" : ""
+                }`}
+              >
+                {formatTime(seconds)}
+              </div>
+            )}
+
+            {game !== "bomb" && !state.timer.running && seconds > 0 && (
+              <span className="paused-label">Paused</span>
+            )}
+
+            {host && seconds > 0 && (
+              <button
+                className="timer-control"
+                onClick={() =>
+                  act({
+                    type: state.timer.running ? "pauseTimer" : "resumeTimer",
+                  })
+                }
+              >
+                {state.timer.running ? "⏸ Pause" : "▶ Resume"}
+              </button>
+            )}
           </div>
         )}
       </div>
       {game === "spelling" && (
         <>
-          <div className="hero-word">{state.currentContent?.prompt}</div>
-          {host && <Actions act={act} />}
+          <div className="hero-word spelling-word">
+            {spellingFeedback ? answeredWord : state.currentContent?.prompt}
+          </div>
+
+          {host && (
+            <button
+              className="pronounce-button"
+              disabled={Boolean(spellingFeedback)}
+              onClick={() => speakWord(state.currentContent?.prompt || "")}
+            >
+              🔊 Repeat word
+            </button>
+          )}
+
+          {state.phase === "ended" ? (
+            <div className="time-up">
+              {seconds > 0 ? "Round over — incorrect answer!" : "Time’s up!"}
+            </div>
+          ) : Number(state.timer.pausedRemaining) > 0 ? (
+            <div className="round-paused">Round paused</div>
+          ) : host ? (
+            <div className="actions spelling-actions">
+              <button
+                disabled={Boolean(spellingFeedback)}
+                onClick={() => answerSpelling("wrong")}
+              >
+                Incorrect / Pass
+              </button>
+
+              <button
+                className="correct"
+                disabled={Boolean(spellingFeedback)}
+                onClick={() => answerSpelling("correct")}
+              >
+                Correct +10
+              </button>
+            </div>
+          ) : null}
         </>
       )}
       {game === "taboo" && (
         <>
-          <div className="hero-word">{state.currentContent?.prompt}</div>
+          <div className="hero-word taboo-word">
+            {tabooFeedback
+              ? answeredTaboo.prompt
+              : state.currentContent?.prompt}
+          </div>
+
           <div className="taboo-list">
-            {((meta.taboo as string[]) || []).map((w) => (
-              <span key={w}>🚫 {w}</span>
+            {(tabooFeedback
+              ? answeredTaboo.forbidden
+              : (meta.taboo as string[]) || []
+            ).map((word) => (
+              <span key={word}>🚫 {word}</span>
             ))}
           </div>
-          {host && <Actions act={act} />}
+
+          {state.phase === "ended" ? (
+            <div className="time-up">Time&apos;s up!</div>
+          ) : Number(state.timer.pausedRemaining) > 0 ? (
+            <div className="round-paused">Round paused</div>
+          ) : host ? (
+            <div className="actions taboo-actions">
+              <button
+                disabled={Boolean(tabooFeedback)}
+                onClick={() => answerTaboo("wrong")}
+              >
+                Pass
+              </button>
+
+              <button
+                className="correct"
+                disabled={Boolean(tabooFeedback)}
+                onClick={() => answerTaboo("correct")}
+              >
+                Correct +10
+              </button>
+            </div>
+          ) : null}
         </>
       )}
       {game === "trivia" && (
         <>
-          <div className="category">{state.currentContent?.category}</div>
-          <div className="question">{state.currentContent?.prompt}</div>
-          {state.answerShown && (
+          <div className="category">
+            {triviaFeedback
+              ? answeredTrivia.category
+              : state.currentContent?.category}
+          </div>
+
+          <div className="question trivia-question">
+            {triviaFeedback
+              ? answeredTrivia.question
+              : state.currentContent?.prompt}
+          </div>
+
+          {!triviaFeedback && state.answerShown && (
             <div className="answer">{state.currentContent?.answer}</div>
           )}
-          {host && (
+
+          {state.phase === "ended" ? (
+            <div className="time-up">Time&apos;s up!</div>
+          ) : Number(state.timer.pausedRemaining) > 0 ? (
+            <div className="round-paused">Round paused</div>
+          ) : host ? (
             <>
               <button
                 className="reveal"
+                disabled={Boolean(triviaFeedback)}
                 onClick={() => act({ type: "revealAnswer" })}
               >
                 {state.answerShown ? "Hide" : "Show"} answer
               </button>
-              <Actions act={act} />
+
+              <div className="actions trivia-actions">
+                <button
+                  disabled={Boolean(triviaFeedback)}
+                  onClick={() => answerTrivia("wrong")}
+                >
+                  Incorrect / Pass
+                </button>
+
+                <button
+                  className="correct"
+                  disabled={Boolean(triviaFeedback)}
+                  onClick={() => answerTrivia("correct")}
+                >
+                  Correct +10
+                </button>
+              </div>
             </>
-          )}
+          ) : null}
         </>
       )}
       {game === "password" && (
@@ -558,8 +829,10 @@ function GameView({
         <>
           {state.phase === "playing" ? (
             <>
-              <div className="bomb-icon">💣</div>
+              <div className="bomb-icon bomb-live">💣</div>
+
               <div className="hero-word">{state.currentContent?.prompt}</div>
+
               <p className="rule">
                 {state.bomb.rule === "tick"
                   ? "Word cannot start with"
@@ -568,19 +841,28 @@ function GameView({
                     : "Letters can appear anywhere"}{" "}
                 <b>{state.currentContent?.prompt}</b>
               </p>
+
               {seconds === 0 && <div className="boom">BOOM!</div>}
+
               {host && seconds === 0 && (
                 <div className="actions">
                   <button
                     onClick={() =>
-                      act({ type: "bombResolve", losingTeam: "A" })
+                      act({
+                        type: "bombResolve",
+                        losingTeam: "A",
+                      })
                     }
                   >
                     Team A held it
                   </button>
+
                   <button
                     onClick={() =>
-                      act({ type: "bombResolve", losingTeam: "B" })
+                      act({
+                        type: "bombResolve",
+                        losingTeam: "B",
+                      })
                     }
                   >
                     Team B held it
@@ -590,20 +872,41 @@ function GameView({
             </>
           ) : (
             <>
-              <div className="bomb-icon">🎲</div>
-              {state.bomb.rule && (
-                <p className="rule">Rule ready · fuse is hidden</p>
+              <div className={`bomb-die ${rollingBombDie ? "rolling" : ""}`}>
+                🎲
+              </div>
+
+              {rollingBombDie ? (
+                <p className="rule">Rolling a new rule and letters…</p>
+              ) : state.phase === "ended" ? (
+                <p className="rule">Round complete · roll the next bomb</p>
+              ) : state.bomb.rule ? (
+                <p className="rule">Rule ready · fuse duration is hidden</p>
+              ) : (
+                <p className="rule">Roll the die to choose the rule</p>
               )}
+
               {host && (
                 <button
                   className="primary-control"
-                  onClick={() =>
-                    state.bomb.rule
-                      ? act({ type: "bombStart" })
-                      : act({ type: "bombRoll" })
-                  }
+                  disabled={rollingBombDie}
+                  onClick={() => {
+                    if (state.phase === "ended") {
+                      rollBombDie();
+                    } else if (state.bomb.rule) {
+                      void act({ type: "bombStart" });
+                    } else {
+                      rollBombDie();
+                    }
+                  }}
                 >
-                  {state.bomb.rule ? "Start bomb" : "Roll rule"}
+                  {rollingBombDie
+                    ? "Rolling…"
+                    : state.phase === "ended"
+                      ? "Next bomb"
+                      : state.bomb.rule
+                        ? "Start bomb"
+                        : "Roll die"}
                 </button>
               )}
             </>
@@ -636,7 +939,6 @@ function Actions({ act }: { act: (a: Record<string, unknown>) => void }) {
       <button
         className="correct"
         onClick={() => {
-          playSuccess();
           act({ type: "correct" });
         }}
       >
@@ -676,62 +978,51 @@ function noiseBurst(
   source.start(time);
   source.stop(time + duration);
 }
+const gameSounds: Record<string, HTMLAudioElement> = {};
+
+function playSound(file: string, volume = 1) {
+  try {
+    if (typeof window === "undefined") return;
+
+    const sound =
+      gameSounds[file] ?? (gameSounds[file] = new Audio(`/sounds/${file}`));
+
+    sound.pause();
+    sound.currentTime = 0;
+    sound.volume = volume;
+
+    void sound.play().catch(() => {
+      // Browsers may block sound until the host interacts with the page.
+    });
+  } catch {
+    // Audio failure should never interrupt the game.
+  }
+}
+
 function playSuccess() {
-  try {
-    const c = audioContext(),
-      n = c.currentTime;
-    [0, 0.06, 0.13, 0.21, 0.3, 0.41, 0.54, 0.69, 0.86].forEach((offset) => {
-      const t = n + offset + Math.random() * 0.015;
-      noiseBurst(
-        c,
-        t,
-        0.045,
-        900 + Math.random() * 500,
-        0.18 + Math.random() * 0.1,
-      );
-      noiseBurst(
-        c,
-        t + 0.012,
-        0.08,
-        1800 + Math.random() * 900,
-        0.25 + Math.random() * 0.12,
-      );
-    });
-  } catch {}
+  playSound("correct.mp3", 0.8);
 }
+
 function playWrong() {
-  try {
-    const c = audioContext(),
-      n = c.currentTime;
-    [185, 92.5].forEach((f, i) => {
-      const o = c.createOscillator(),
-        g = c.createGain();
-      o.type = i ? "square" : "sawtooth";
-      o.frequency.setValueAtTime(f, n);
-      o.frequency.exponentialRampToValueAtTime(f * 0.72, n + 0.55);
-      g.gain.setValueAtTime(0.16, n);
-      g.gain.exponentialRampToValueAtTime(0.001, n + 0.58);
-      o.connect(g);
-      g.connect(c.destination);
-      o.start(n);
-      o.stop(n + 0.6);
-    });
-  } catch {}
+  playSound("incorrect.mp3", 0.8);
 }
+
 function playTick(urgent: boolean) {
-  try {
-    const c = audioContext(),
-      n = c.currentTime,
-      o = c.createOscillator(),
-      g = c.createGain();
-    o.type = "sine";
-    o.frequency.setValueAtTime(urgent ? 1250 : 920, n);
-    o.frequency.exponentialRampToValueAtTime(urgent ? 780 : 610, n + 0.045);
-    g.gain.setValueAtTime(urgent ? 0.18 : 0.09, n);
-    g.gain.exponentialRampToValueAtTime(0.001, n + 0.055);
-    o.connect(g);
-    g.connect(c.destination);
-    o.start(n);
-    o.stop(n + 0.06);
-  } catch {}
+  playSound("tick.mp3", urgent ? 0.55 : 0.3);
+}
+function speakWord(word: string) {
+  if (!word || !("speechSynthesis" in window)) return;
+  const synth = window.speechSynthesis;
+  synth.cancel();
+  const voices = synth.getVoices();
+  const voice =
+    voices.find((v) => v.lang.toLowerCase() === "en-za") ??
+    voices.find((v) => v.lang.toLowerCase() === "en-gb") ??
+    voices.find((v) => v.lang.toLowerCase().startsWith("en"));
+  const utterance = new SpeechSynthesisUtterance(word);
+  utterance.lang = voice?.lang || "en-ZA";
+  if (voice) utterance.voice = voice;
+  utterance.rate = 0.82;
+  utterance.pitch = 1;
+  synth.speak(utterance);
 }
