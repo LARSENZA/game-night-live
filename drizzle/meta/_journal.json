@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1787655995912,
+      "tag": "0000_rare_senator_kelly",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1787657160674,
+      "tag": "0001_bizarre_gateway",
+      "breakpoints": true
+    }
+  ]
+}
