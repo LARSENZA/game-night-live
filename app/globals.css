@@ -1164,3 +1164,580 @@ button {
   cursor: not-allowed;
   opacity: 0.65;
 }
+
+/* ================================================================
+   GAME NIGHT ZA · LIVESTREAM UI POLISH
+   Presentation overrides only. Game logic remains in room-client.tsx.
+   ================================================================ */
+
+:root {
+  --bg: #090a12;
+  --surface: #151728;
+  --surface2: #20233a;
+  --line: #3a3e61;
+  --text: #f8f7fc;
+  --dim: #b9bad0;
+  --gold: #ffc857;
+  --blue: #4da3ff;
+  --green: #35d477;
+  --coral: #ff5268;
+  --pink: #f472b6;
+  --stage-radius: clamp(18px, 1.8vw, 28px);
+  --stage-pad: clamp(20px, 3vw, 52px);
+}
+
+html,
+body {
+  min-height: 100%;
+  min-height: 100dvh;
+}
+
+button,
+input,
+select,
+textarea {
+  min-height: 44px;
+}
+
+button {
+  transition:
+    transform 120ms ease,
+    border-color 120ms ease,
+    background-color 120ms ease,
+    opacity 120ms ease;
+}
+
+button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--gold) 60%, var(--line));
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px) scale(0.99);
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid var(--text);
+  outline-offset: 3px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+  filter: saturate(0.55);
+}
+
+.room-shell {
+  width: min(1800px, 100%);
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: clamp(10px, 1.2vw, 20px) clamp(10px, 1.5vw, 26px) 40px;
+}
+
+.room-header {
+  min-height: 54px;
+  margin-bottom: 10px;
+}
+
+.room-brand {
+  font-size: clamp(16px, 1.25vw, 22px);
+}
+
+.scoreboard {
+  gap: clamp(8px, 1vw, 16px);
+}
+
+.scoreboard article {
+  position: relative;
+  min-height: clamp(88px, 8vw, 122px);
+  padding: 27px clamp(14px, 1.5vw, 26px) 14px;
+  border-width: 2px;
+  border-radius: 18px;
+  overflow: hidden;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease;
+}
+
+.scoreboard article::before {
+  content: "TEAM " attr(data-team);
+  position: absolute;
+  top: 7px;
+  left: 18px;
+  color: var(--dim);
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: 0.13em;
+}
+
+.scoreboard article.active {
+  border-color: var(--gold);
+  background:
+    linear-gradient(90deg, rgb(255 200 87 / 10%), transparent 42%),
+    var(--surface);
+  box-shadow:
+    inset 8px 0 0 var(--gold),
+    0 0 34px rgb(255 200 87 / 16%);
+}
+
+.scoreboard article.active::before {
+  content: "▶ TEAM " attr(data-team) " · PLAYING";
+  color: var(--gold);
+}
+
+.scoreboard strong,
+.score-input {
+  font-size: clamp(42px, 4.2vw, 72px);
+  line-height: 0.95;
+  font-variant-numeric: tabular-nums;
+}
+
+.score-input {
+  width: clamp(86px, 8vw, 130px);
+}
+
+.team-name,
+.team-name-input {
+  font-size: clamp(18px, 1.6vw, 28px);
+  line-height: 1.1;
+}
+
+.score-buttons button {
+  min-width: 50px;
+  min-height: 48px;
+  font-size: 16px;
+}
+
+.stream-toolbar {
+  margin: 10px 0;
+}
+
+.stream-toolbar button {
+  min-height: 46px;
+}
+
+.game-tabs {
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.game-tabs button {
+  min-height: 72px;
+  font-size: 13px;
+}
+
+.game-stage {
+  position: relative;
+  min-height: max(560px, calc(100dvh - 330px));
+  padding: var(--stage-pad);
+  border-radius: var(--stage-radius);
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 12%, rgb(77 163 255 / 9%), transparent 38%),
+    linear-gradient(160deg, #1c1f35, #11131f);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 4%),
+    0 20px 70px rgb(0 0 0 / 24%);
+}
+
+.game-panel {
+  position: relative;
+  min-height: 100%;
+  padding-top: clamp(68px, 7vh, 92px);
+}
+
+.game-heading,
+.display .game-heading {
+  position: absolute;
+  inset: 0 0 auto;
+  transform: none;
+  min-height: 58px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgb(185 186 208 / 17%);
+  font-size: clamp(13px, 1.1vw, 18px);
+  letter-spacing: 0.14em;
+}
+
+.timer {
+  min-width: 126px;
+  color: var(--gold);
+  font-size: clamp(36px, 3.3vw, 58px);
+  line-height: 1;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.timer-tools {
+  min-height: 52px;
+}
+
+.timer-control,
+.pronounce-button,
+.reveal {
+  min-height: 48px;
+  padding-inline: 17px;
+}
+
+.hero-word {
+  max-width: 14ch;
+  margin-inline: auto;
+  font-size: clamp(64px, 9vw, 144px);
+  line-height: 0.94;
+  text-wrap: balance;
+}
+
+.question {
+  width: min(100%, 21ch);
+  max-width: 1150px;
+  margin-inline: auto;
+  font-size: clamp(34px, 4.7vw, 76px);
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.category {
+  margin-bottom: clamp(14px, 2vh, 24px);
+  font-size: clamp(14px, 1.2vw, 20px);
+}
+
+.answer {
+  max-width: min(900px, 100%);
+  font-size: clamp(24px, 2.4vw, 40px);
+}
+
+.taboo-list,
+.revealed-clues {
+  gap: clamp(8px, 1vw, 14px);
+  margin: clamp(18px, 3vh, 32px) 0;
+}
+
+.taboo-list span,
+.revealed-clues span {
+  padding: 14px 20px;
+  font-size: clamp(18px, 1.7vw, 27px);
+}
+
+.actions {
+  width: min(100%, 1000px);
+  align-self: center;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: clamp(10px, 1.2vw, 18px);
+  margin-top: clamp(24px, 4vh, 48px);
+}
+
+.actions button,
+.primary-control {
+  min-height: clamp(58px, 6vh, 76px);
+  border-radius: 16px;
+  font-size: clamp(17px, 1.45vw, 23px);
+}
+
+.actions .correct {
+  box-shadow: 0 12px 30px rgb(53 212 119 / 16%);
+}
+
+.time-up,
+.round-paused {
+  font-size: clamp(24px, 2.5vw, 40px);
+}
+
+.bomb-fuse-status {
+  font-size: clamp(18px, 1.5vw, 25px);
+}
+
+.bomb-die,
+.bomb-icon {
+  font-size: clamp(100px, 12vw, 180px);
+}
+
+.boom {
+  font-size: clamp(72px, 10vw, 150px);
+}
+
+.music-prompt {
+  font-size: clamp(42px, 6vw, 84px);
+  text-wrap: balance;
+}
+
+.music-grid button {
+  min-height: 86px;
+  font-size: clamp(17px, 1.35vw, 22px);
+}
+
+.wave-target {
+  font-size: clamp(76px, 9vw, 130px);
+}
+
+.result-row b {
+  font-size: clamp(54px, 6vw, 94px);
+}
+
+/* Hide Controls becomes the clean, one-screen broadcast presentation. */
+.controls-hidden {
+  width: 100%;
+  max-width: none;
+  min-height: 100dvh;
+  padding: 10px;
+}
+
+.controls-hidden .scoreboard {
+  width: min(1800px, 100%);
+  margin: 0 auto 10px;
+}
+
+.controls-hidden .scoreboard article {
+  min-height: 94px;
+  grid-template-columns: 1fr auto;
+}
+
+.controls-hidden .game-stage {
+  width: min(1800px, 100%);
+  min-height: calc(100dvh - 124px);
+  margin-inline: auto;
+}
+
+.floating-controls {
+  z-index: 120;
+  min-height: 48px;
+  opacity: 0.82;
+  backdrop-filter: blur(12px);
+}
+
+.floating-controls:hover,
+.floating-controls:focus-visible {
+  opacity: 1;
+}
+
+@media (max-width: 900px) {
+  .room-shell {
+    padding: 8px 8px 24px;
+  }
+
+  .room-header {
+    min-height: 48px;
+  }
+
+  .scoreboard article {
+    grid-template-columns: 1fr auto;
+    min-height: 82px;
+    padding: 24px 12px 10px;
+  }
+
+  .score-buttons {
+    grid-column: 1 / -1;
+  }
+
+  .scoreboard strong,
+  .score-input {
+    font-size: clamp(36px, 8vw, 54px);
+  }
+
+  .team-name,
+  .team-name-input {
+    font-size: clamp(15px, 3.5vw, 21px);
+  }
+
+  .game-stage {
+    min-height: max(570px, calc(100dvh - 250px));
+    padding: clamp(16px, 4vw, 28px);
+  }
+
+  .game-panel {
+    padding-top: 72px;
+  }
+
+  .game-heading,
+  .display .game-heading {
+    position: absolute;
+    transform: none;
+    margin: 0;
+  }
+
+  .timer {
+    min-width: 90px;
+    font-size: clamp(30px, 7vw, 42px);
+  }
+
+  .timer-control {
+    min-width: 84px;
+  }
+
+  .question {
+    width: min(100%, 18ch);
+    font-size: clamp(30px, 7.6vw, 54px);
+  }
+
+  .hero-word {
+    font-size: clamp(54px, 14vw, 92px);
+  }
+
+  .actions {
+    position: sticky;
+    bottom: calc(8px + env(safe-area-inset-bottom));
+    z-index: 15;
+    width: 100%;
+    margin-top: 28px;
+    padding: 8px;
+    border: 1px solid rgb(58 62 97 / 75%);
+    border-radius: 18px;
+    background: rgb(15 17 30 / 91%);
+    box-shadow: 0 12px 40px rgb(0 0 0 / 45%);
+    backdrop-filter: blur(14px);
+  }
+
+  .actions button {
+    min-height: 60px;
+    padding: 13px 10px;
+  }
+
+  .music-grid,
+  .result-row {
+    gap: 10px;
+  }
+}
+
+/* Portrait capture: keep the action rail and lower overlay region clear. */
+@media (orientation: portrait) {
+  .room-shell {
+    width: 100%;
+    min-height: 100dvh;
+    padding:
+      max(8px, env(safe-area-inset-top))
+      max(10px, env(safe-area-inset-right))
+      calc(18px + env(safe-area-inset-bottom))
+      max(10px, env(safe-area-inset-left));
+  }
+
+  .room-header .room-code,
+  .stream-toolbar kbd {
+    display: none;
+  }
+
+  .room-brand {
+    display: block;
+    font-size: 14px;
+  }
+
+  .scoreboard article {
+    min-width: 0;
+  }
+
+  .game-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-height: 34dvh;
+    overflow-y: auto;
+  }
+
+  .game-stage {
+    min-height: max(600px, calc(100dvh - 235px));
+  }
+
+  .controls-hidden .game-stage {
+    min-height: calc(100dvh - 118px);
+    padding-bottom: max(16vh, 100px);
+  }
+
+  .controls-hidden .question,
+  .controls-hidden .hero-word,
+  .controls-hidden .taboo-list,
+  .controls-hidden .music-prompt {
+    max-width: 76%;
+  }
+}
+
+@media (max-width: 540px) {
+  .scoreboard {
+    gap: 6px;
+  }
+
+  .scoreboard article {
+    padding-inline: 10px;
+    border-radius: 13px;
+  }
+
+  .scoreboard article::before {
+    left: 12px;
+    font-size: 9px;
+  }
+
+  .score-input {
+    width: 70px;
+  }
+
+  .score-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+
+  .score-buttons button {
+    min-width: 0;
+  }
+
+  .game-heading {
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .timer-tools {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .actions {
+    grid-template-columns: 1fr 1.15fr;
+  }
+
+  .actions button {
+    font-size: 15px;
+  }
+
+  .taboo-list span,
+  .revealed-clues span {
+    padding: 10px 12px;
+    font-size: 17px;
+  }
+
+  .music-grid,
+  .result-row {
+    grid-template-columns: 1fr;
+  }
+
+  .result-row div:last-child {
+    grid-column: auto;
+  }
+}
+
+@media (max-height: 720px) and (orientation: landscape) {
+  .room-header {
+    min-height: 42px;
+    margin-bottom: 6px;
+  }
+
+  .scoreboard article {
+    min-height: 76px;
+  }
+
+  .game-stage {
+    min-height: 480px;
+  }
+
+  .game-panel {
+    padding-top: 60px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}

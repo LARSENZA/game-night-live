@@ -269,7 +269,7 @@ export function RoomClient({
           className="floating-controls"
           onClick={() => setControlsHidden(false)}
         >
-          Show controls <kbd>H</kbd>
+          Show host controls <kbd>H</kbd>
         </button>
       )}
       {error && <div className="toast error">{error}</div>}
@@ -291,6 +291,8 @@ function Scoreboard({
       {(["A", "B"] as TeamKey[]).map((team) => (
         <article
           key={team}
+          data-team={team}
+          aria-current={state.activeTeam === team ? "true" : undefined}
           className={state.activeTeam === team ? "active" : ""}
           onClick={() => host && act({ type: "setActiveTeam", team })}
         >
