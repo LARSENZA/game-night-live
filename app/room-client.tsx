@@ -4,15 +4,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { GameState, GameType, RoomPayload, TeamKey } from "@/lib/types";
 
-const GAMES: { id: GameType; icon: string; name: string }[] = [
-  { id: "spelling", icon: "🔤", name: "Spelling Bee" },
-  { id: "taboo", icon: "🙊", name: "Taboo" },
-  { id: "music", icon: "🎵", name: "Music Round" },
-  { id: "password", icon: "🔑", name: "Password" },
-  { id: "bomb", icon: "💣", name: "Bomb" },
-  { id: "trivia", icon: "🎓", name: "Fifth Grader" },
-  { id: "wavelength", icon: "📡", name: "Wavelength" },
+const GAMES: { id: GameType; name: string }[] = [
+  { id: "spelling", name: "Spelling Bee" },
+  { id: "taboo", name: "Taboo" },
+  { id: "music", name: "Music Round" },
+  { id: "password", name: "Password" },
+  { id: "bomb", name: "Bomb" },
+  { id: "trivia", name: "Fifth Grader" },
+  { id: "wavelength", name: "Wavelength" },
 ];
+
+const BOMB_LOTTERY = [
+  { id: "tick", label: "TICK", description: "The word cannot start with the letters" },
+  { id: "ticktack", label: "TICK TACK", description: "The letters can go anywhere in the word" },
+  { id: "bomb", label: "BOMB", description: "The word cannot end with the letters" },
+] as const;
 
 function metadata(state: GameState) {
   try {
@@ -23,11 +29,31 @@ function metadata(state: GameState) {
 }
 function remaining(state: GameState, now: number) {
   if (state.timer.running && state.timer.endsAt && now)
-    return Math.max(0, Math.ceil((state.timer.endsAt - now) / 1000));
+    return Math.max(
+      0,
+      Math.min(
+        state.timer.total,
+        Math.ceil((state.timer.endsAt - now) / 1000),
+      ),
+    );
   return Math.max(0, Number(state.timer.pausedRemaining) || 0);
 }
 function formatTime(seconds: number) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function syncServerClock(
+  response: Response,
+  requestStarted: number,
+  offsetRef: { current: number },
+) {
+  const serverDate = response.headers.get("date");
+  if (!serverDate) return;
+  const serverTime = Date.parse(serverDate);
+  if (!Number.isFinite(serverTime)) return;
+  const responseReceived = Date.now();
+  const halfRoundTrip = (responseReceived - requestStarted) / 2;
+  offsetRef.current = serverTime + halfRoundTrip - responseReceived;
 }
 
 export function RoomClient({
@@ -50,10 +76,13 @@ export function RoomClient({
   const previousScore = useRef<{ A: number; B: number } | null>(null);
   const previousTick = useRef<number | null>(null);
   const previousSpokenWord = useRef("");
+  const serverClockOffset = useRef(0);
 
   const load = useCallback(async () => {
     try {
+      const requestStarted = Date.now();
       const response = await fetch(`/api/rooms/${code}`, { cache: "no-store" });
+      syncServerClock(response, requestStarted, serverClockOffset);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Room unavailable");
       setRoom(data);
@@ -66,10 +95,13 @@ export function RoomClient({
   useEffect(() => {
     const initial = setTimeout(() => {
       void load();
-      setNow(Date.now());
+      setNow(Date.now() + serverClockOffset.current);
     }, 0);
     const poll = setInterval(load, 800);
-    const clock = setInterval(() => setNow(Date.now()), 250);
+    const clock = setInterval(
+      () => setNow(Date.now() + serverClockOffset.current),
+      250,
+    );
     return () => {
       clearTimeout(initial);
       clearInterval(poll);
@@ -136,6 +168,7 @@ export function RoomClient({
     const token = localStorage.getItem(`host-token:${code}`);
     if (!token)
       return setError("This browser does not have the host key for this room.");
+    const requestStarted = Date.now();
     const response = await fetch(`/api/rooms/${code}/actions`, {
       method: "POST",
       headers: {
@@ -144,6 +177,7 @@ export function RoomClient({
       },
       body: JSON.stringify(action),
     });
+    syncServerClock(response, requestStarted, serverClockOffset);
     const data = await response.json();
     if (!response.ok) return setError(data.error || "Action failed");
     setRoom(data);
@@ -173,6 +207,14 @@ export function RoomClient({
     void (document.fullscreenElement
       ? document.exitFullscreen()
       : document.documentElement.requestFullscreen());
+  const exitGame = () => {
+    if (
+      window.confirm(
+        "Exit this game and return to the Game Night ZA start screen?",
+      )
+    )
+      router.push("/");
+  };
 
   return (
     <main
@@ -181,8 +223,8 @@ export function RoomClient({
       {!controlsHidden && (
         <header className="room-header">
           <div className="host-nav">
-            <button className="ghost" onClick={() => router.push("/")}>
-              ← Home
+            <button className="ghost exit-game" onClick={exitGame}>
+              Exit game
             </button>
             {role === "host" && (
               <button
@@ -204,7 +246,7 @@ export function RoomClient({
                 playTick(false);
               }}
             >
-              {soundReady ? "🔊 Sound on" : "🔇 Sound off"}
+              {soundReady ? "Sound on" : "Sound off"}
             </button>
             <div className="room-code">
               ROOM <strong>{code}</strong>
@@ -216,13 +258,13 @@ export function RoomClient({
       {role === "host" && !controlsHidden && (
         <div className="stream-toolbar">
           <button onClick={() => setGamePickerOpen((value) => !value)}>
-            🎲 {gamePickerOpen ? "Hide games" : "Choose game"} <kbd>G</kbd>
+            {gamePickerOpen ? "Close games menu" : "Games menu"} <kbd>G</kbd>
           </button>
           <button onClick={toggleFullscreen}>
             {isFullscreen ? "↙ Exit fullscreen" : "⛶ Fullscreen"} <kbd>F</kbd>
           </button>
           <button onClick={() => setControlsHidden(true)}>
-            ◉ Hide controls <kbd>H</kbd>
+            Broadcast mode <kbd>H</kbd>
           </button>
         </div>
       )}
@@ -237,7 +279,7 @@ export function RoomClient({
                 setGamePickerOpen(false);
               }}
             >
-              <span>{g.icon}</span>
+              <GameIcon game={g.id} />
               {g.name}
             </button>
           ))}
@@ -246,7 +288,7 @@ export function RoomClient({
       <section className="game-stage">
         {!state.currentGame ? (
           <div className="waiting">
-            <div>🎲</div>
+            <div className="waiting-icon"><GameIcon game="wavelength" /></div>
             <h2>Choose a game</h2>
             <p>Use the game picker above to begin.</p>
           </div>
@@ -284,7 +326,7 @@ function Scoreboard({
 }: {
   state: GameState;
   host: boolean;
-  act: (a: Record<string, unknown>) => void;
+  act: (a: Record<string, unknown>) => Promise<void>;
 }) {
   return (
     <section className="scoreboard">
@@ -358,13 +400,16 @@ function GameView({
   meta: Record<string, unknown>;
   seconds: number;
   host: boolean;
-  act: (a: Record<string, unknown>) => void;
+  act: (a: Record<string, unknown>) => Promise<void>;
   clue: string;
   setClue: (v: string) => void;
   guess: number;
   setGuess: (v: number) => void;
 }) {
   const game = state.currentGame!;
+  const selectedBombRule = BOMB_LOTTERY.find(
+    (rule) => rule.id === state.bomb.rule,
+  );
   const [spellingFeedback, setSpellingFeedback] = useState<
     "correct" | "wrong" | null
   >(null);
@@ -389,6 +434,38 @@ function GameView({
     question: "",
     answer: "",
   });
+  const [passwordFeedback, setPasswordFeedback] = useState<
+    "correct" | "wrong" | null
+  >(null);
+  const [answeredPasswordClues, setAnsweredPasswordClues] = useState<string[]>(
+    [],
+  );
+
+  function answerPassword(result: "correct" | "wrong") {
+    if (passwordFeedback) return;
+    setAnsweredPasswordClues([...state.passwordClues]);
+    setPasswordFeedback(result);
+    if (result === "wrong") playWrong();
+    void act({ type: result === "correct" ? "correct" : "pass" });
+    window.setTimeout(() => {
+      setPasswordFeedback(null);
+      setAnsweredPasswordClues([]);
+    }, 650);
+  }
+  const [waveFeedback, setWaveFeedback] = useState<
+    "correct" | "close" | "wrong" | null
+  >(null);
+
+  function lockWaveGuess() {
+    if (waveFeedback) return;
+    const difference = Math.abs(guess - state.wavelength.target);
+    const feedback =
+      difference === 0 ? "correct" : difference === 1 ? "close" : "wrong";
+    setWaveFeedback(feedback);
+    if (feedback === "wrong") playWrong();
+    void act({ type: "waveGuess", guess });
+    window.setTimeout(() => setWaveFeedback(null), 800);
+  }
 
   function answerTrivia(result: "correct" | "wrong") {
     if (triviaFeedback) return;
@@ -420,16 +497,20 @@ function GameView({
   }
 
   const [rollingBombDie, setRollingBombDie] = useState(false);
+  const [bombLotteryIndex, setBombLotteryIndex] = useState(0);
 
-  function rollBombDie() {
+  async function rollBombDie() {
     if (rollingBombDie) return;
-
     setRollingBombDie(true);
-
-    window.setTimeout(() => {
-      void act({ type: "bombRoll" });
-      setRollingBombDie(false);
-    }, 900);
+    let nextIndex = 0;
+    const cycle = window.setInterval(() => {
+      nextIndex = (nextIndex + 1) % BOMB_LOTTERY.length;
+      setBombLotteryIndex(nextIndex);
+    }, 140);
+    await new Promise((resolve) => window.setTimeout(resolve, 1260));
+    window.clearInterval(cycle);
+    await act({ type: "bombRoll" });
+    setRollingBombDie(false);
   }
 
   function answerTaboo(result: "correct" | "wrong") {
@@ -497,6 +578,14 @@ function GameView({
         game === "trivia" && triviaFeedback
           ? `trivia-feedback-${triviaFeedback}`
           : ""
+      } ${
+        game === "password" && passwordFeedback
+          ? `password-feedback-${passwordFeedback}`
+          : ""
+      } ${
+        game === "wavelength" && waveFeedback
+          ? `wavelength-feedback-${waveFeedback}`
+          : ""
       }`}
     >
       <div className="game-heading">
@@ -506,10 +595,10 @@ function GameView({
             {game === "bomb" ? (
               <div className="bomb-fuse-status">
                 {state.timer.running
-                  ? "💣 Fuse active"
+                  ? "Fuse active"
                   : seconds > 0
-                    ? "⏸ Fuse paused"
-                    : "💥 Exploded"}
+                    ? "Fuse paused"
+                    : "Exploded"}
               </div>
             ) : (
               <div
@@ -677,7 +766,19 @@ function GameView({
       )}
       {game === "password" && (
         <>
-          {state.phase !== "guess" ? (
+          {passwordFeedback ? (
+            <>
+              <div className="category">Final guess</div>
+              <div className={`password-result ${passwordFeedback}`}>
+                {passwordFeedback === "correct" ? "Correct" : "Incorrect"}
+              </div>
+              <div className="revealed-clues">
+                {answeredPasswordClues.map((c, i) => (
+                  <span key={i}>{i + 1}. {c}</span>
+                ))}
+              </div>
+            </>
+          ) : state.phase !== "guess" ? (
             <>
               <div className="category">Secret word</div>
               <div className="hero-word">{state.currentContent?.prompt}</div>
@@ -720,7 +821,23 @@ function GameView({
                   </span>
                 ))}
               </div>
-              {host && <Actions act={act} />}
+              {host && (
+                <div className="actions password-actions">
+                  <button
+                    disabled={Boolean(passwordFeedback)}
+                    onClick={() => answerPassword("wrong")}
+                  >
+                    Incorrect / Pass
+                  </button>
+                  <button
+                    className="correct"
+                    disabled={Boolean(passwordFeedback)}
+                    onClick={() => answerPassword("correct")}
+                  >
+                    Correct +10
+                  </button>
+                </div>
+              )}
             </>
           )}
         </>
@@ -790,7 +907,8 @@ function GameView({
                   <div className="wave-target">{guess}</div>
                   <button
                     className="primary-control"
-                    onClick={() => act({ type: "waveGuess", guess })}
+                    disabled={Boolean(waveFeedback)}
+                    onClick={lockWaveGuess}
                   >
                     Lock guess
                   </button>
@@ -815,6 +933,15 @@ function GameView({
                   <b>{state.wavelength.points}</b>
                 </div>
               </div>
+              {waveFeedback && (
+                <div className={`wave-feedback-label ${waveFeedback}`}>
+                  {waveFeedback === "correct"
+                    ? "Exact match · 10 points"
+                    : waveFeedback === "close"
+                      ? "So close · 5 points"
+                      : "Too far · 0 points"}
+                </div>
+              )}
               {host && (
                 <button
                   className="primary-control"
@@ -831,16 +958,12 @@ function GameView({
         <>
           {state.phase === "playing" ? (
             <>
-              <div className="bomb-icon bomb-live">💣</div>
+              <div className="bomb-icon bomb-live"><GameIcon game="bomb" /></div>
 
               <div className="hero-word">{state.currentContent?.prompt}</div>
 
               <p className="rule">
-                {state.bomb.rule === "tick"
-                  ? "Word cannot start with"
-                  : state.bomb.rule === "bomb"
-                    ? "Word cannot end with"
-                    : "Letters can appear anywhere"}{" "}
+                <strong>{selectedBombRule?.label}</strong> — {selectedBombRule?.description}{" "}
                 <b>{state.currentContent?.prompt}</b>
               </p>
 
@@ -875,17 +998,27 @@ function GameView({
           ) : (
             <>
               <div className={`bomb-die ${rollingBombDie ? "rolling" : ""}`}>
-                🎲
+                <DieIcon />
               </div>
 
               {rollingBombDie ? (
-                <p className="rule">Rolling a new rule and letters…</p>
+                <div className="bomb-lottery" aria-live="polite">
+                  <strong key={bombLotteryIndex}>
+                    {BOMB_LOTTERY[bombLotteryIndex].label}
+                  </strong>
+                  <span>{BOMB_LOTTERY[bombLotteryIndex].description}</span>
+                </div>
               ) : state.phase === "ended" ? (
                 <p className="rule">Round complete · roll the next bomb</p>
-              ) : state.bomb.rule ? (
-                <p className="rule">Rule ready · fuse duration is hidden</p>
+              ) : selectedBombRule ? (
+                <div className="bomb-rule-card">
+                  <span>Selected rule</span>
+                  <strong>{selectedBombRule.label}</strong>
+                  <p>{selectedBombRule.description} <b>{state.currentContent?.prompt}</b></p>
+                  <small>The fuse duration will remain hidden.</small>
+                </div>
               ) : (
-                <p className="rule">Roll the die to choose the rule</p>
+                <p className="rule">Roll to choose TICK, TICK TACK, or BOMB</p>
               )}
 
               {host && (
@@ -916,6 +1049,44 @@ function GameView({
         </>
       )}
     </div>
+  );
+}
+
+function GameIcon({ game }: { game: GameType }) {
+  const common = {
+    viewBox: "0 0 64 64",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 3.5,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true,
+  };
+  if (game === "spelling")
+    return <svg className="game-icon" {...common}><path d="M10 48 23 14l13 34M15 36h17M39 18h8a8 8 0 0 1 0 16h-8V18Zm0 16h10a8 8 0 0 1 0 16H39V34Z" /></svg>;
+  if (game === "taboo")
+    return <svg className="game-icon" {...common}><path d="M12 14h40v30H30L18 54V44h-6V14Z"/><path d="m16 51 34-38" /></svg>;
+  if (game === "music")
+    return <svg className="game-icon" {...common}><path d="M27 45V16l26-5v28"/><path d="M27 22 53 17"/><ellipse cx="19" cy="46" rx="8" ry="6"/><ellipse cx="45" cy="40" rx="8" ry="6"/></svg>;
+  if (game === "password")
+    return <svg className="game-icon" {...common}><circle cx="22" cy="28" r="11"/><path d="m31 35 20 20m-8-8 6-6m-13-1 6-6"/></svg>;
+  if (game === "bomb")
+    return <svg className="game-icon" {...common}><circle cx="30" cy="37" r="18"/><path d="m42 24 7-8m-14 4 5-7m8 5 5 4"/><path d="M23 31h14"/></svg>;
+  if (game === "trivia")
+    return <svg className="game-icon" {...common}><path d="m7 25 25-13 25 13-25 13L7 25Z"/><path d="M17 32v11c9 7 21 7 30 0V32m10-7v18"/></svg>;
+  return <svg className="game-icon" {...common}><path d="M8 38c7-18 14 18 22 0s15 18 26-8"/><path d="M8 22h48M8 50h48"/></svg>;
+}
+
+function DieIcon() {
+  return (
+    <svg className="die-icon" viewBox="0 0 64 64" aria-hidden="true">
+      <rect x="8" y="8" width="48" height="48" rx="10" />
+      <circle cx="21" cy="21" r="3" />
+      <circle cx="43" cy="21" r="3" />
+      <circle cx="32" cy="32" r="3" />
+      <circle cx="21" cy="43" r="3" />
+      <circle cx="43" cy="43" r="3" />
+    </svg>
   );
 }
 

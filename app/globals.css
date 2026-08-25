@@ -1741,3 +1741,245 @@ button:disabled {
     transition-duration: 1ms !important;
   }
 }
+
+/* Consistent vector artwork replaces platform-dependent game emojis. */
+.game-icon {
+  display: block;
+  width: 1em;
+  height: 1em;
+  color: currentColor;
+}
+
+.game-tabs .game-icon {
+  width: 32px;
+  height: 32px;
+  color: var(--gold);
+}
+
+.game-tabs button.selected .game-icon {
+  color: var(--blue);
+  filter: drop-shadow(0 0 10px rgb(77 163 255 / 35%));
+}
+
+.waiting-icon {
+  display: grid;
+  place-items: center;
+  width: 104px;
+  height: 104px;
+  margin-inline: auto;
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: var(--surface2);
+  color: var(--gold);
+}
+
+.waiting-icon .game-icon {
+  width: 66px;
+  height: 66px;
+}
+
+.bomb-icon {
+  display: grid;
+  place-items: center;
+  width: clamp(120px, 14vw, 190px);
+  height: clamp(120px, 14vw, 190px);
+  margin-inline: auto;
+  color: var(--coral);
+}
+
+.bomb-icon .game-icon {
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 0 24px rgb(255 82 104 / 32%));
+}
+
+.die-icon {
+  display: block;
+  width: 1em;
+  height: 1em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3.5;
+}
+
+.bomb-die {
+  color: var(--gold);
+}
+
+/* Wavelength feedback: exact, close, and miss are distinct without colour alone. */
+.game-panel.wavelength {
+  isolation: isolate;
+}
+
+.wavelength-feedback-correct::before,
+.wavelength-feedback-close::before,
+.wavelength-feedback-wrong::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+  animation: spelling-flash 800ms ease-out;
+}
+
+.wavelength-feedback-correct::before {
+  background: rgb(53 212 119 / 32%);
+}
+
+.wavelength-feedback-close::before {
+  background: rgb(255 159 67 / 32%);
+}
+
+.wavelength-feedback-wrong::before {
+  background: rgb(255 82 104 / 34%);
+}
+
+.wavelength-feedback-correct .result-row {
+  color: var(--green);
+}
+
+.wavelength-feedback-close .result-row {
+  color: #ffb454;
+}
+
+.wavelength-feedback-wrong .result-row {
+  color: var(--coral);
+}
+
+.wave-feedback-label {
+  align-self: center;
+  margin-top: 20px;
+  border: 2px solid currentColor;
+  border-radius: 999px;
+  padding: 12px 22px;
+  font-size: clamp(18px, 1.8vw, 28px);
+  font-weight: 950;
+}
+
+.wave-feedback-label.correct {
+  color: var(--green);
+  background: rgb(53 212 119 / 12%);
+}
+
+.wave-feedback-label.close {
+  color: #ffb454;
+  background: rgb(255 159 67 / 12%);
+}
+
+.wave-feedback-label.wrong {
+  color: var(--coral);
+  background: rgb(255 82 104 / 12%);
+}
+
+.exit-game {
+  border-color: rgb(255 82 104 / 42%);
+  color: #ffadb8;
+}
+
+/* Password answer feedback preserves the submitted clues during the flash. */
+.game-panel.password {
+  isolation: isolate;
+}
+
+.password-feedback-correct::before,
+.password-feedback-wrong::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+  animation: spelling-flash 650ms ease-out;
+}
+
+.password-feedback-correct::before {
+  background: rgb(53 212 119 / 32%);
+}
+
+.password-feedback-wrong::before {
+  background: rgb(255 82 104 / 34%);
+}
+
+.password-result {
+  align-self: center;
+  font-size: clamp(54px, 8vw, 118px);
+  font-weight: 950;
+  line-height: 1;
+  text-transform: uppercase;
+  animation: spelling-word-feedback 650ms ease-out;
+}
+
+.password-result.correct {
+  color: var(--green);
+}
+
+.password-result.wrong {
+  color: var(--coral);
+}
+
+/* Bomb rule lottery and selected-rule reveal. */
+.bomb-lottery,
+.bomb-rule-card {
+  width: min(760px, 100%);
+  align-self: center;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  margin: 10px auto 26px;
+  border: 2px solid var(--gold);
+  border-radius: 22px;
+  padding: clamp(18px, 3vw, 32px);
+  background:
+    radial-gradient(circle at 50% 0, rgb(255 200 87 / 16%), transparent 65%),
+    var(--surface2);
+  box-shadow: 0 16px 46px rgb(0 0 0 / 34%);
+  text-align: center;
+}
+
+.bomb-lottery strong,
+.bomb-rule-card > strong {
+  color: var(--gold);
+  font-size: clamp(42px, 6vw, 82px);
+  line-height: 1;
+  letter-spacing: 0.04em;
+}
+
+.bomb-lottery strong {
+  animation: bomb-lottery-pop 140ms ease-out;
+}
+
+.bomb-lottery span,
+.bomb-rule-card p {
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(18px, 1.8vw, 28px);
+  font-weight: 800;
+}
+
+.bomb-rule-card > span,
+.bomb-rule-card small {
+  color: var(--dim);
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.bomb-rule-card p b,
+.game-panel.bomb .rule b {
+  color: var(--gold);
+  font-size: 1.2em;
+}
+
+.game-panel.bomb .rule strong {
+  color: var(--coral);
+}
+
+@keyframes bomb-lottery-pop {
+  from {
+    opacity: 0.35;
+    transform: translateY(-8px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
