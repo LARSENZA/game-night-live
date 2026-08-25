@@ -1,107 +1,125 @@
-# vinext-starter
+# Game Night ZA
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+A host-controlled party-game platform built for TikTok Live and other shared-screen game nights. One host opens the site, shares the same browser window and runs the entire game while players participate through the livestream.
 
-## Prerequisites
+**Live application:** [gamenightza.com](https://gamenightza.com)  
+**Source:** [github.com/LARSENZA/game-night-live](https://github.com/LARSENZA/game-night-live)
 
-- Node.js `>=22.13.0`
-- Linux with `flock`, `curl`, and GNU `timeout`
+## Highlights
 
-## Sites Lifecycle
+- Guest-first gameplay: players do not need accounts or devices
+- Single-screen stream mode with fullscreen and hideable host controls
+- Two teams with editable names, direct score entry and ±5 controls
+- Seven game modes: Spelling Bee, Taboo, Music Round, Password, Bomb, Fifth Grader and Wavelength
+- Room codes and host-token authorization
+- Persistent Cloudflare D1 content database
+- Custom question editor with CSV and JSON importing
+- Question rotation that prevents repeats between teams until the available bank is exhausted
+- Optional second display for multi-monitor setups
+- Responsive landscape layout for TikTok Live Studio, desktop and mobile
 
-The Sites lifecycle CLI runs the locked dependency install before returning this checkout. Edit the source under `app/`, then checkpoint when a coherent milestone is ready to inspect or share. The remote Sites builder runs `npm run build` against the pushed commit. Do not repeat install or build as a normal pre-checkpoint step.
+## Game Modes
 
-This starter does not use `wrangler.jsonc`.
+| Mode | How it works |
+| --- | --- |
+| Spelling Bee | Spell the displayed word correctly before moving to the next prompt. |
+| Taboo | Describe the target without using any of the forbidden words. |
+| Music Round | The host awards points for identifying the title, artist and lyrics. |
+| Password | Three clues are entered and hidden one at a time, then revealed together for Player 4. |
+| Bomb | Players answer around the active letter rule before the hidden fuse expires. |
+| Fifth Grader | General-knowledge questions with host-controlled answer reveals. |
+| Wavelength | Teams estimate a hidden target on a 0–10 scale during a 60-second timed round. |
 
-`install:ci` is intentionally a single, non-retrying `npm ci`. It refuses a concurrent install for the same project, consumes a matching image-seeded npm cache with `--prefer-offline` while retaining registry fallback for a missing cache object, otherwise downloads and verifies the complete vinext tarball recorded in `package-lock.json`, limits npm to one socket, and terminates a stalled install. `build` applies a short timeout. These helpers target Linux and use GNU `timeout`; they are not native macOS scripts.
+## Technology
 
-Scripts that need writable project-scoped home, npm, XDG, and temporary paths use `scripts/sites-env.sh`. The `dev` and `start` scripts honor the caller's runtime environment and keep Wrangler logs inside the checkout. The generated `.sites-runtime/` directory is disposable and ignored by Git.
+| Layer | Technology |
+| --- | --- |
+| Interface | React 19, TypeScript, CSS |
+| Application framework | Next.js App Router API surface through Vinext and Vite |
+| Server runtime | Cloudflare Workers |
+| Database | Cloudflare D1 (SQLite) |
+| ORM and migrations | Drizzle ORM and Drizzle Kit |
+| Deployment | Cloudflare Workers Builds connected to GitHub |
 
-## Included Shape
+## Architecture
 
-- edit site code under `app/`
-- `app/chatgpt-auth.ts` provides optional dispatch-owned ChatGPT sign-in helpers
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/index.ts` reads the D1 binding from the Cloudflare Worker environment
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+The host creates a room through the API and receives a private host token stored in that browser. Game actions are authorized by that token and persisted as room state in D1. The host and optional display clients refresh shared room state frequently, while timers use server-generated end timestamps so reconnecting clients calculate the same remaining time.
 
-## Workspace Auth Headers
+Default and room-specific questions are stored in D1. Used content IDs are tracked per game and room, preventing Team B from receiving a question already shown to Team A until the eligible question bank has been exhausted.
 
-OpenAI workspace sites can read the current user's email from
-`oai-authenticated-user-email`.
+## Run Locally
 
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
+### Requirements
 
-Treat the full name as optional and fall back to email when it is absent:
+- Node.js 22.13 or newer
+- npm
+- A Cloudflare account for D1-backed features
 
-```tsx
-import { headers } from "next/headers";
+Clone and install:
 
-export default async function Home() {
-  const requestHeaders = await headers();
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```bash
+git clone https://github.com/LARSENZA/game-night-live.git
+cd game-night-live
+npm install
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+Apply the migrations to a local D1 database:
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
+```bash
+npx wrangler d1 migrations apply game-night-live-db --local
+```
 
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
+Start the development server:
 
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
+```bash
+npx vite
+```
 
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
+Open the local address printed in the terminal.
 
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
+## Deploy
 
-## Diagnostic Commands
+Authenticate once:
 
-- `npm run install:ci`: perform the one bounded lockfile install
-- `npm run dev`: start the Vite/Vinext development server
-- `npm run build`: build the deployable Sites artifact
-- `npm run start`: start the built Vinext application
-- `npm test`: build and verify the rendered development-preview metadata
-- `npm run db:generate`: generate Drizzle migrations after schema changes
+```bash
+npx wrangler login
+```
 
-Use build commands for targeted diagnosis after a remote failure, not as part of the normal checkpoint path.
+Apply new migrations when the schema changes:
 
-The timeout defaults can be overridden for a controlled canary with `SITES_INSTALL_TIMEOUT`, `SITES_INSTALL_KILL_AFTER`, `SITES_BUILD_TIMEOUT`, and `SITES_BUILD_KILL_AFTER`. A timeout fails the command; the helpers never retry an unchanged install or build.
+```bash
+npx wrangler d1 migrations apply game-night-live-db --remote
+```
 
-## Learn More
+Deploy manually:
 
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+```bash
+npm run deploy
+```
+
+The production Worker is also connected to the `main` branch through Cloudflare Workers Builds, so accepted pushes automatically deploy.
+
+## Content Management
+
+Create a room, then select **Content** from the host view. The host can:
+
+- Enable or disable built-in questions
+- Add room-specific content
+- Edit or remove custom entries
+- Import multiple entries using CSV or JSON
+
+## Stream Controls
+
+| Key | Action |
+| --- | --- |
+| `G` | Open or close the game picker |
+| `F` | Enter or exit fullscreen |
+| `H` | Hide or show host controls |
+
+## Project Status
+
+Game Night ZA is deployed and playable. Current development is focused on additional content, gameplay polish, automated testing and improved deployment previews.
+
+## Author
+
+Built by [Larsen Ngobeni](https://github.com/LARSENZA).
