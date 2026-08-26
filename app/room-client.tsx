@@ -43,17 +43,21 @@ function formatTime(seconds: number) {
 }
 
 function syncServerClock(
-  response: Response,
+  serverNow: unknown,
   requestStarted: number,
   offsetRef: { current: number },
 ) {
-  const serverDate = response.headers.get("date");
-  if (!serverDate) return;
-  const serverTime = Date.parse(serverDate);
+  const serverTime = Number(serverNow);
   if (!Number.isFinite(serverTime)) return;
   const responseReceived = Date.now();
   const halfRoundTrip = (responseReceived - requestStarted) / 2;
-  offsetRef.current = serverTime + halfRoundTrip - responseReceived;
+  const measuredOffset = serverTime + halfRoundTrip - responseReceived;
+  // Network latency varies slightly between polls. Smooth later measurements
+  // so the visible countdown never jumps forward/backward between seconds.
+  offsetRef.current =
+    offsetRef.current === 0
+      ? measuredOffset
+      : offsetRef.current * 0.85 + measuredOffset * 0.15;
 }
 
 export function RoomClient({
@@ -73,7 +77,10 @@ export function RoomClient({
   const [gamePickerOpen, setGamePickerOpen] = useState(true);
   const [controlsHidden, setControlsHidden] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const previousScore = useRef<{ A: number; B: number } | null>(null);
+  const suppressScoreSoundUntil = useRef(0);
   const previousTick = useRef<number | null>(null);
   const previousSpokenWord = useRef("");
   const serverClockOffset = useRef(0);
@@ -82,8 +89,8 @@ export function RoomClient({
     try {
       const requestStarted = Date.now();
       const response = await fetch(`/api/rooms/${code}`, { cache: "no-store" });
-      syncServerClock(response, requestStarted, serverClockOffset);
       const data = await response.json();
+      syncServerClock(data.serverNow, requestStarted, serverClockOffset);
       if (!response.ok) throw new Error(data.error || "Room unavailable");
       setRoom(data);
       setError("");
@@ -112,7 +119,12 @@ export function RoomClient({
     if (!room) return;
     const prev = previousScore.current,
       next = { A: room.state.teams.A.score, B: room.state.teams.B.score };
-    if (soundReady && prev && (next.A > prev.A || next.B > prev.B))
+    if (
+      soundReady &&
+      prev &&
+      (next.A > prev.A || next.B > prev.B) &&
+      Date.now() > suppressScoreSoundUntil.current
+    )
       playSuccess();
     previousScore.current = next;
   }, [room, soundReady]);
@@ -124,6 +136,14 @@ export function RoomClient({
       previousTick.current = tickSeconds;
       if (soundReady) playTick(tickSeconds <= 10);
     }
+  }, [tickSeconds, room, soundReady]);
+
+  const previousBombSeconds = useRef<number | null>(null);
+  useEffect(() => {
+    if (!room || room.state.currentGame !== "bomb") return;
+    if (soundReady && previousBombSeconds.current && previousBombSeconds.current > 0 && tickSeconds === 0)
+      playSound("explode.mp3", 0.95);
+    previousBombSeconds.current = tickSeconds;
   }, [tickSeconds, room, soundReady]);
 
   useEffect(() => {
@@ -165,6 +185,8 @@ export function RoomClient({
   }, [role]);
 
   async function act(action: Record<string, unknown>) {
+    if (action.type === "addPoints" || action.type === "setScore")
+      suppressScoreSoundUntil.current = Date.now() + 2000;
     const token = localStorage.getItem(`host-token:${code}`);
     if (!token)
       return setError("This browser does not have the host key for this room.");
@@ -177,8 +199,8 @@ export function RoomClient({
       },
       body: JSON.stringify(action),
     });
-    syncServerClock(response, requestStarted, serverClockOffset);
     const data = await response.json();
+    syncServerClock(data.serverNow, requestStarted, serverClockOffset);
     if (!response.ok) return setError(data.error || "Action failed");
     setRoom(data);
   }
@@ -219,6 +241,11 @@ export function RoomClient({
   return (
     <main
       className={`room-shell ${role} ${controlsHidden ? "controls-hidden" : ""}`}
+      onClickCapture={(event) => {
+        const target = event.target as HTMLElement;
+        if (soundReady && target.closest("button") && !target.closest(".sound-button"))
+          playSound("click.mp3", 0.65);
+      }}
     >
       {!controlsHidden && (
         <header className="room-header">
@@ -226,6 +253,25 @@ export function RoomClient({
             <button className="ghost exit-game" onClick={exitGame}>
               Exit game
             </button>
+            {role === "host" && (
+              <button
+                className="ghost new-game"
+                onClick={() => {
+                  if (window.confirm("Start a completely new game? Team names, scores and current progress will be reset.")) {
+                    void act({ type: "newGame" });
+                    setGamePickerOpen(true);
+                  }
+                }}
+              >
+                New game
+              </button>
+            )}
+            {role === "host" && (
+              <button className="ghost" onClick={() => setReviewOpen(true)}>
+                Review
+              </button>
+            )}
+            {role === "host" && <button className="ghost" onClick={() => setLeaderboardOpen(true)}>Leaderboard</button>}
             {role === "host" && (
               <button
                 className="ghost"
@@ -242,8 +288,8 @@ export function RoomClient({
             <button
               className="sound-button"
               onClick={() => {
+                playSound("click.mp3", 0.65);
                 setSoundReady((value) => !value);
-                playTick(false);
               }}
             >
               {soundReady ? "Sound on" : "Sound off"}
@@ -275,7 +321,7 @@ export function RoomClient({
               key={g.id}
               className={state.currentGame === g.id ? "selected" : ""}
               onClick={() => {
-                void act({ type: "startGame", game: g.id });
+                void act({ type: "selectGame", game: g.id });
                 setGamePickerOpen(false);
               }}
             >
@@ -292,6 +338,12 @@ export function RoomClient({
             <h2>Choose a game</h2>
             <p>Use the game picker above to begin.</p>
           </div>
+        ) : state.phase === "setup" ? (
+          <SetupScreen state={state} host={hostControls} act={act} />
+        ) : state.phase === "turnComplete" ? (
+          <TurnComplete state={state} host={hostControls} act={act} />
+        ) : state.phase === "matchComplete" ? (
+          <MatchComplete state={state} host={hostControls} act={act} onReview={() => setReviewOpen(true)} />
         ) : (
           <GameView
             state={state}
@@ -315,8 +367,41 @@ export function RoomClient({
         </button>
       )}
       {error && <div className="toast error">{error}</div>}
+      {reviewOpen && <ReviewPanel state={state} onClose={() => setReviewOpen(false)} />}
+      {leaderboardOpen && <LeaderboardPanel onClose={() => setLeaderboardOpen(false)} />}
     </main>
   );
+}
+
+function SetupScreen({state,host,act}:{state:GameState;host:boolean;act:(a:Record<string,unknown>)=>Promise<void>}) {
+  const title=GAMES.find(g=>g.id===state.currentGame)?.name;
+  return <div className="setup-card">
+    <span className="setup-kicker">Ready to play</span><GameIcon game={state.currentGame!}/><h1>{title}</h1>
+    <p>Choose the first team. Content and timers stay hidden until Start.</p>
+    <div className="starting-team-picker">{(["A","B"] as TeamKey[]).map(team=><button key={team} className={state.startingTeam===team?"selected":""} disabled={!host} onClick={()=>act({type:"setActiveTeam",team})}>{state.teams[team].name}<small>{state.startingTeam===team?"Starts first":"Tap to choose"}</small></button>)}</div>
+    {host&&<button className="primary-control start-match" onClick={()=>act({type:"beginGame"})}>Start {title}</button>}
+  </div>;
+}
+
+function TurnComplete({state,host,act}:{state:GameState;host:boolean;act:(a:Record<string,unknown>)=>Promise<void>}) {
+  const next=state.startingTeam==="A"?"B":"A";
+  return <div className="round-summary"><span className="setup-kicker">First turn complete</span><h1>{state.teams[state.activeTeam].name}</h1><p>Next up: <strong>{state.teams[next].name}</strong></p>{host&&<button className="primary-control" onClick={()=>act({type:"nextTeam"})}>Start {state.teams[next].name}&apos;s turn</button>}</div>;
+}
+
+function MatchComplete({state,host,act,onReview}:{state:GameState;host:boolean;act:(a:Record<string,unknown>)=>Promise<void>;onReview:()=>void}) {
+  const a=state.teams.A.score-state.matchStartScores.A,b=state.teams.B.score-state.matchStartScores.B;
+  return <div className="round-summary match-complete"><span className="setup-kicker">Game complete</span><h1>{a===b?"It’s a draw!":`${a>b?state.teams.A.name:state.teams.B.name} wins!`}</h1><div className="match-points"><b>{state.teams.A.name}<strong>+{a}</strong></b><b>{state.teams.B.name}<strong>+{b}</strong></b></div>{host&&<div className="summary-actions"><button onClick={onReview}>Review answers</button><button onClick={()=>act({type:"replayGame"})}>Play again</button><button className="primary-control" onClick={()=>act({type:"gamesMenu"})}>Games menu</button></div>}</div>;
+}
+
+function ReviewPanel({state,onClose}:{state:GameState;onClose:()=>void}) {
+  return <div className="review-backdrop" role="dialog" aria-modal="true" aria-label="Answer review"><section className="review-panel"><header><div><span className="setup-kicker">Match history</span><h2>Answer review</h2></div><button onClick={onClose}>Close</button></header>{state.review.length?<div className="review-list">{[...state.review].reverse().map(item=><article key={item.id} className={`review-${item.result}`}><div><b>{item.teamName}</b><span>{GAMES.find(g=>g.id===item.game)?.name}</span></div><h3>{item.prompt}</h3>{item.answer&&<p>Answer: <strong>{item.answer}</strong></p>}{item.detail&&<p>{item.detail}</p>}<strong className="review-result">{item.result} · {item.points>=0?"+":""}{item.points}</strong></article>)}</div>:<p>No answers recorded in this room yet.</p>}</section></div>;
+}
+
+type LeaderTeam={id:number;name:string;totalScore:number;matchesPlayed:number;gamesWon:number;correctAnswers:number;answersPlayed:number};
+function LeaderboardPanel({onClose}:{onClose:()=>void}) {
+  const [teams,setTeams]=useState<LeaderTeam[]>([]),[loading,setLoading]=useState(true);
+  useEffect(()=>{let live=true;fetch("/api/leaderboard",{cache:"no-store"}).then(r=>r.json()).then(d=>{if(live)setTeams(d.teams??[])}).catch(()=>{}).finally(()=>{if(live)setLoading(false)});return()=>{live=false}},[]);
+  return <div className="review-backdrop" role="dialog" aria-modal="true" aria-label="Leaderboard"><section className="review-panel leaderboard-panel"><header><div><span className="setup-kicker">Game Night ZA</span><h2>Leaderboard</h2></div><button onClick={onClose}>Close</button></header>{loading?<p>Loading scores…</p>:teams.length?<div className="leader-table"><div className="leader-head"><span>#</span><span>Team</span><span>Score</span><span>Played</span><span>Wins</span><span>Accuracy</span></div>{teams.map((team,i)=><div key={team.id}><b>{i+1}</b><strong>{team.name}</strong><b>{team.totalScore}</b><span>{team.matchesPlayed}</span><span>{team.gamesWon}</span><span>{team.answersPlayed?Math.round(team.correctAnswers/team.answersPlayed*100):0}%</span></div>)}</div>:<p>The leaderboard will appear after the first completed game.</p>}</section></div>;
 }
 
 function Scoreboard({
@@ -339,14 +424,7 @@ function Scoreboard({
           onClick={() => host && act({ type: "setActiveTeam", team })}
         >
           {host ? (
-            <input
-              className="team-name-input"
-              value={state.teams[team].name}
-              onClick={(e) => e.stopPropagation()}
-              onChange={(e) =>
-                act({ type: "renameTeam", team, name: e.target.value })
-              }
-            />
+            <input className="team-name-input" value={state.teams[team].name} maxLength={24} aria-label={`${team} team name`} onClick={(e)=>e.stopPropagation()} onChange={(e)=>act({type:"renameTeam",team,name:e.target.value})}/>
           ) : (
             <span className="team-name">{state.teams[team].name}</span>
           )}
@@ -356,6 +434,7 @@ function Scoreboard({
               type="number"
               step="5"
               min="0"
+              max="9999"
               value={state.teams[team].score}
               onClick={(e) => e.stopPropagation()}
               onChange={(e) =>
@@ -410,6 +489,7 @@ function GameView({
   const selectedBombRule = BOMB_LOTTERY.find(
     (rule) => rule.id === state.bomb.rule,
   );
+  useEffect(() => { setGuess(5); }, [state.turnNumber, state.currentContent?.id, setGuess]);
   const [spellingFeedback, setSpellingFeedback] = useState<
     "correct" | "wrong" | null
   >(null);
@@ -448,6 +528,7 @@ function GameView({
     if (result === "wrong") playWrong();
     void act({ type: result === "correct" ? "correct" : "pass" });
     window.setTimeout(() => {
+      void act({ type: "completeTurn" });
       setPasswordFeedback(null);
       setAnsweredPasswordClues([]);
     }, 650);
@@ -502,6 +583,7 @@ function GameView({
   async function rollBombDie() {
     if (rollingBombDie) return;
     setRollingBombDie(true);
+    playSound("dice.mp3", 0.8);
     let nextIndex = 0;
     const cycle = window.setInterval(() => {
       nextIndex = (nextIndex + 1) % BOMB_LOTTERY.length;
@@ -559,6 +641,7 @@ function GameView({
     });
 
     window.setTimeout(() => {
+      if (result === "wrong") void act({ type: "completeTurn" });
       setSpellingFeedback(null);
       setAnsweredWord("");
     }, 650);
@@ -865,12 +948,7 @@ function GameView({
             ))}
           </div>
           {host && (
-            <button
-              className="primary-control"
-              onClick={() => act({ type: "musicConfirm" })}
-            >
-              Confirm round
-            </button>
+            <div className="actions music-actions"><button className="zero-control" onClick={() => act({ type: "musicConfirm", zero: true })}>0 points</button><button className="primary-control" onClick={() => act({ type: "musicConfirm" })}>Confirm round</button></div>
           )}
         </>
       )}
@@ -945,9 +1023,9 @@ function GameView({
               {host && (
                 <button
                   className="primary-control"
-                  onClick={() => act({ type: "next" })}
+                  onClick={() => act({ type: "completeWave" })}
                 >
-                  Next round
+                  Complete turn
                 </button>
               )}
             </>
@@ -1121,8 +1199,11 @@ function Actions({ act }: { act: (a: Record<string, unknown>) => void }) {
   );
 }
 
+let sharedAudioContext: AudioContext | null = null;
 function audioContext() {
-  return new window.AudioContext();
+  sharedAudioContext ??= new window.AudioContext();
+  if (sharedAudioContext.state === "suspended") void sharedAudioContext.resume();
+  return sharedAudioContext;
 }
 function noiseBurst(
   c: AudioContext,

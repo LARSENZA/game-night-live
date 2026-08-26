@@ -1,31 +1,10 @@
-import { getRoom } from "@/lib/game-server";
-
-export async function GET(
-  _request: Request,
-  context: { params: Promise<{ code: string }> },
-) {
-  const { code } = await context.params;
-  const room = await getRoom(code);
-  if (!room) return Response.json({ error: "Room not found" }, { status: 404 });
-  const state = JSON.parse(room.state);
-  if (
-    state.timer?.running &&
-    state.timer.endsAt &&
-    Date.now() >= state.timer.endsAt
-  ) {
-    state.timer.running = false;
-    state.timer.endsAt = null;
-    state.timer.pausedRemaining = 0;
-    if (
-      state.currentGame === "spelling" ||
-      state.currentGame === "taboo" ||
-      state.currentGame === "trivia"
-    ) {
-      state.phase = "ended";
-    }
-  }
-  return Response.json(
-    { code: room.code, state, version: room.updatedAt },
-    { headers: { "Cache-Control": "no-store" } },
-  );
+import { eq } from "drizzle-orm";
+import { getDb } from "@/db";
+import { rooms } from "@/db/schema";
+import { expireRound, getRoom, hydrateState } from "@/lib/game-server";
+export async function GET(_request:Request,context:{params:Promise<{code:string}>}){
+  const {code}=await context.params,room=await getRoom(code);if(!room)return Response.json({error:"Room not found"},{status:404});
+  const state=hydrateState(JSON.parse(room.state));let version=room.updatedAt;
+  if(await expireRound(state,room.id)){version=new Date().toISOString();await getDb().update(rooms).set({state:JSON.stringify(state),updatedAt:version}).where(eq(rooms.id,room.id));}
+  return Response.json({code:room.code,state,version,serverNow:Date.now()},{headers:{"Cache-Control":"no-store"}});
 }

@@ -10,9 +10,11 @@ export async function POST(request: Request, context: { params: Promise<{ code:s
   if (!room) return Response.json({ error:"Room not found" }, { status:404 });
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
   if (!token || await hashToken(token) !== room.hostTokenHash) return Response.json({ error:"Host access denied" }, { status:403 });
-  const action = await request.json() as Record<string, unknown>;
+  let action: Record<string, unknown>;
+  try { action = await request.json() as Record<string, unknown>; }
+  catch { return Response.json({ error:"Invalid action" }, { status:400 }); }
   const state = await applyAction(JSON.parse(room.state) as GameState, action, room.id);
   const updatedAt = new Date().toISOString();
   await getDb().update(rooms).set({ state:JSON.stringify(state), updatedAt }).where(eq(rooms.code, room.code));
-  return Response.json({ code:room.code, state, version:updatedAt });
+  return Response.json({ code:room.code, state, version:updatedAt, serverNow:Date.now() });
 }
