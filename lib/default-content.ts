@@ -1,8 +1,14 @@
+import { TABOO_BANK } from "./taboo-bank";
+
 export const DEFAULT_CONTENT = [
   ...["cat","house","umbrella","giraffe","rhythm","necessary","definitely","separate","embarrass","occurrence","restaurant","calendar","vacuum","licence","jewellery","mosquito","pneumonia","entrepreneur","silhouette","bureaucracy","conscience","questionnaire","maintenance","privilege","receipt","accommodate","camouflage","fluorescent","hierarchy"].map(prompt => ({ gameType:"spelling", prompt, answer:prompt, category:"Mixed", metadata:{} })),
-  ...[
-    ["Basketball",["hoop","ball","dribble"]],["Birthday",["cake","party","candles"]],["Pizza",["cheese","slice","Italian"]],["Beach",["sand","ocean","waves"]],["Doctor",["hospital","nurse","sick"]],["Elephant",["trunk","big","Africa"]],["Guitar",["strings","music","band"]],["Wedding",["bride","groom","marriage"]],["Airport",["plane","fly","luggage"]],["Coffee",["caffeine","cup","morning"]],["Camera",["photo","picture","lens"]],["Football",["goal","kick","pitch"]],["Umbrella",["rain","cover","handle"]],["Mountain",["high","climb","peak"]],["Netflix",["watch","show","stream"]],["Bicycle",["pedal","wheels","ride"]],["Rainbow",["colours","sky","rain"]],["Volcano",["lava","erupt","mountain"]]
-  ].map(([prompt, taboo]) => ({ gameType:"taboo", prompt:prompt as string, answer:null, category:"General", metadata:{ taboo } })),
+  ...TABOO_BANK.map(([prompt, category, taboo]) => ({
+    gameType: "taboo" as const,
+    prompt,
+    answer: null,
+    category,
+    metadata: { taboo: [...taboo] },
+  })),
   ...["Ocean","Guitar","Robot","Volcano","Whisper","Diamond","Jungle","Rocket","Shadow","Compass","Thunder","Pirate","Castle","Firework","Mirror","Puzzle","Lantern","Feather","Glacier","Carnival","Marathon","Telescope","Waterfall","Avalanche","Blueprint"].map(prompt => ({ gameType:"password", prompt, answer:prompt, category:"General", metadata:{} })),
   ...["DE","ST","AN","ER","IN","RE","TH","EA","OU","CK","SH","TR","PL","QU","AR","OR","LO","TI","CA","ME","NA","LI","RO","BE","SO"].map(prompt => ({ gameType:"bomb", prompt, answer:null, category:"Fragment", metadata:{} })),
   ...[

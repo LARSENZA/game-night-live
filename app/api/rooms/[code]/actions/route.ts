@@ -13,7 +13,8 @@ export async function POST(request: Request, context: { params: Promise<{ code:s
   let action: Record<string, unknown>;
   try { action = await request.json() as Record<string, unknown>; }
   catch { return Response.json({ error:"Invalid action" }, { status:400 }); }
-  const state = await applyAction(JSON.parse(room.state) as GameState, action, room.id);
+  let state:GameState;
+  try{state=await applyAction(JSON.parse(room.state) as GameState,action,room.id);}catch(error){return Response.json({error:error instanceof Error?error.message:"Action failed"},{status:400});}
   const updatedAt = new Date().toISOString();
   await getDb().update(rooms).set({ state:JSON.stringify(state), updatedAt }).where(eq(rooms.code, room.code));
   return Response.json({ code:room.code, state, version:updatedAt, serverNow:Date.now() });

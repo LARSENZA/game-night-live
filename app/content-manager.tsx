@@ -226,8 +226,18 @@ export function ContentManager({ code }: { code: string }) {
             <input
               value={form.metadata}
               onChange={(e) => setForm({ ...form, metadata: e.target.value })}
-              placeholder='{"low":"easy","high":"hard"}'
+              placeholder={
+                form.gameType === "taboo"
+                  ? '{"taboo":["word 1","word 2","word 3","word 4","word 5"]}'
+                  : '{"low":"easy","high":"hard"}'
+              }
             />
+            {form.gameType === "taboo" && (
+              <small className="field-help">
+                Add exactly five unique words—the first clues most people would
+                naturally use to describe the answer.
+              </small>
+            )}
           </label>
         </div>
         <div className="editor-actions">
@@ -252,6 +262,10 @@ export function ContentManager({ code }: { code: string }) {
           <p>
             Paste a JSON array or CSV with:{" "}
             <code>gameType,prompt,answer,category,metadata</code>
+          </p>
+          <p className="import-help">
+            Every Taboo card must include a <code>metadata.taboo</code> array
+            containing exactly five unique prohibited words.
           </p>
         </div>
         <textarea

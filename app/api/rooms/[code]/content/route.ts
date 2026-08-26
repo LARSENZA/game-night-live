@@ -41,9 +41,12 @@ export async function GET(
       .select()
       .from(gameContent)
       .where(
-        or(
-          isNull(gameContent.ownerRoomId),
-          eq(gameContent.ownerRoomId, auth.room.id),
+        and(
+          eq(gameContent.isActive, true),
+          or(
+            isNull(gameContent.ownerRoomId),
+            eq(gameContent.ownerRoomId, auth.room.id),
+          ),
         ),
       );
   const settings = await db
@@ -74,6 +77,14 @@ export async function POST(
   const items = raw
     .map(normalizeItem)
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
+  if (items.length !== raw.length)
+    return Response.json(
+      {
+        error:
+          "One or more items are invalid. Taboo cards must contain exactly five unique prohibited words in metadata.taboo.",
+      },
+      { status: 400 },
+    );
   if (!items.length)
     return Response.json(
       { error: "No valid content supplied" },
@@ -142,7 +153,13 @@ export async function PATCH(
   }
   const item = normalizeItem(body);
   if (!item)
-    return Response.json({ error: "Invalid content" }, { status: 400 });
+    return Response.json(
+      {
+        error:
+          "Invalid content. Taboo cards must contain exactly five unique prohibited words in metadata.taboo.",
+      },
+      { status: 400 },
+    );
   const updated = await db
     .update(gameContent)
     .set(item)
@@ -166,15 +183,45 @@ function normalizeItem(value: unknown) {
       .trim()
       .slice(0, 300);
   if (!GAME_TYPES.includes(gameType) || !prompt) return null;
-  let metadata = "{}";
+  let metadataValue: unknown = {};
   try {
-    metadata =
+    metadataValue =
       typeof raw.metadata === "string"
-        ? JSON.stringify(JSON.parse(raw.metadata))
-        : JSON.stringify(raw.metadata ?? {});
+        ? JSON.parse(raw.metadata)
+        : raw.metadata ?? {};
   } catch {
     return null;
   }
+  if (
+    !metadataValue ||
+    typeof metadataValue !== "object" ||
+    Array.isArray(metadataValue)
+  )
+    return null;
+
+  const metadataObject = metadataValue as Record<string, unknown>;
+  if (gameType === "taboo") {
+    const supplied = metadataObject.taboo;
+    if (
+      !Array.isArray(supplied) ||
+      supplied.length !== 5 ||
+      supplied.some((word) => typeof word !== "string")
+    )
+      return null;
+    const taboo = supplied.map((word) =>
+      String(word).trim().replace(/\s+/g, " ").slice(0, 60),
+    );
+    const normalized = taboo.map((word) => word.toLowerCase());
+    if (
+      taboo.some((word) => !word) ||
+      new Set(normalized).size !== 5 ||
+      normalized.includes(prompt.toLowerCase())
+    )
+      return null;
+    metadataObject.taboo = taboo;
+  }
+
+  const metadata = JSON.stringify(metadataObject);
   return {
     gameType,
     prompt,

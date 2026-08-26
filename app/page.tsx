@@ -10,6 +10,7 @@ export default function Home() {
   const [error, setError] = useState("");
 
   async function createRoom() {
+    const started = Date.now();
     setLoading(true);
     setError("");
     try {
@@ -17,10 +18,13 @@ export default function Home() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not create room");
       localStorage.setItem(`host-token:${data.code}`, data.hostToken);
+      // The opening sequence is deliberately longer than in-game scene changes.
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.max(0, 2400 - (Date.now() - started))),
+      );
       router.push(`/host/${data.code}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not create room");
-    } finally {
       setLoading(false);
     }
   }
@@ -81,6 +85,14 @@ export default function Home() {
           <span>Live score sync</span>
         </div>
       </section>
+      {loading && (
+        <div className="transition-screen landing-transition" role="status" aria-live="polite">
+          <div className="transition-emblem">GN</div>
+          <div className="loading-bar"><span /></div>
+          <strong>OPENING GAME NIGHT…</strong>
+          <small>Preparing your stage</small>
+        </div>
+      )}
     </main>
   );
 }

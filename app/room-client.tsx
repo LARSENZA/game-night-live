@@ -74,14 +74,20 @@ export function RoomClient({
   const [clue, setClue] = useState("");
   const [guess, setGuess] = useState(5);
   const [soundReady, setSoundReady] = useState(role === "host");
-  const [gamePickerOpen, setGamePickerOpen] = useState(true);
+  const [ambientMuted, setAmbientMuted] = useState(false);
+  const [pendingGame, setPendingGame] = useState<GameType | null>(null);
   const [controlsHidden, setControlsHidden] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
+  const [settingsOpen,setSettingsOpen]=useState(false);
+  const [seasonOpen,setSeasonOpen]=useState(false);
+  const [exitConfirmOpen,setExitConfirmOpen]=useState(false);
+  const [transitionMessage,setTransitionMessage]=useState("");
+  const [transitionLeaving,setTransitionLeaving]=useState(false);
+  const [lobbyVolume,setLobbyVolume]=useState(0.22);
   const previousScore = useRef<{ A: number; B: number } | null>(null);
   const suppressScoreSoundUntil = useRef(0);
-  const previousTick = useRef<number | null>(null);
   const previousSpokenWord = useRef("");
   const serverClockOffset = useRef(0);
 
@@ -131,12 +137,17 @@ export function RoomClient({
 
   const tickSeconds = room ? remaining(room.state, now) : 0;
   useEffect(() => {
-    if (!room || !room.state.timer.running || tickSeconds <= 0) return;
-    if (previousTick.current !== tickSeconds) {
-      previousTick.current = tickSeconds;
-      if (soundReady) playTick(tickSeconds <= 10);
-    }
-  }, [tickSeconds, room, soundReady]);
+    const running=Boolean(room?.state.timer.running),endsAt=Number(room?.state.timer.endsAt)||0;
+    if(!running||!endsAt||!soundReady||ambientMuted)return;
+    const play=()=>{const left=Math.ceil((endsAt-(Date.now()+serverClockOffset.current))/1000);if(left>0)playTick(left<=10)};
+    play();
+    // Audio has its own steady cadence. It must not depend on the 250ms render
+    // clock or 800ms room polling, both of which can shift under network load.
+    const cadence=window.setInterval(play,1000);
+    const stopAfter=Math.max(0,endsAt-(Date.now()+serverClockOffset.current)+80);
+    const stop=window.setTimeout(()=>window.clearInterval(cadence),stopAfter);
+    return()=>{window.clearInterval(cadence);window.clearTimeout(stop)};
+  }, [room?.state.timer.running,room?.state.timer.endsAt,soundReady,ambientMuted]);
 
   const previousBombSeconds = useRef<number | null>(null);
   useEffect(() => {
@@ -174,7 +185,6 @@ export function RoomClient({
         return;
       const key = event.key.toLowerCase();
       if (key === "h") setControlsHidden((value) => !value);
-      if (key === "g") setGamePickerOpen((value) => !value);
       if (key === "f")
         void (document.fullscreenElement
           ? document.exitFullscreen()
@@ -184,6 +194,8 @@ export function RoomClient({
     return () => window.removeEventListener("keydown", shortcut);
   }, [role]);
 
+  useEffect(()=>{if(role!=="host")return;const audio=getLobbyAudio();audio.volume=lobbyVolume;const lobby=room?.state.phase==="lobby";if(soundReady&&!ambientMuted&&lobby)void audio.play().catch(()=>{});else{audio.pause();audio.currentTime=0;}return()=>audio.pause();},[role,room?.state.phase,soundReady,ambientMuted,lobbyVolume]);
+
   async function act(action: Record<string, unknown>) {
     if (action.type === "addPoints" || action.type === "setScore")
       suppressScoreSoundUntil.current = Date.now() + 2000;
@@ -191,6 +203,13 @@ export function RoomClient({
     if (!token)
       return setError("This browser does not have the host key for this room.");
     const requestStarted = Date.now();
+    const transitionTypes=["configureEvent","selectGame","beginGame","nextGame","editEvent"];
+    const hasTransition=transitionTypes.includes(String(action.type));
+    if(hasTransition){setTransitionLeaving(false);setTransitionMessage(action.type==="beginGame"?"GET READY…":action.type==="nextGame"?"LOADING NEXT GAME…":"SETTING UP GAME NIGHT…")}
+    const started=Date.now();
+    // Let the entrance animation establish itself before changing server state.
+    // This also prevents a round timer from spending the full transition hidden.
+    if(hasTransition)await new Promise(resolve=>setTimeout(resolve,700));
     const response = await fetch(`/api/rooms/${code}/actions`, {
       method: "POST",
       headers: {
@@ -200,9 +219,11 @@ export function RoomClient({
       body: JSON.stringify(action),
     });
     const data = await response.json();
+    if(hasTransition)await new Promise(resolve=>setTimeout(resolve,Math.max(0,1150-(Date.now()-started))));
     syncServerClock(data.serverNow, requestStarted, serverClockOffset);
-    if (!response.ok) return setError(data.error || "Action failed");
+    if (!response.ok){setTransitionMessage("");return setError(data.error || "Action failed")}
     setRoom(data);
+    if(hasTransition){setTransitionLeaving(true);await new Promise(resolve=>setTimeout(resolve,280));setTransitionMessage("");setTransitionLeaving(false)}
   }
 
   if (error && !room)
@@ -216,7 +237,7 @@ export function RoomClient({
   if (!room)
     return (
       <main className="center-state">
-        <div className="spinner" />
+        <div className="loading-bar" aria-label="Loading"><span /></div>
         <p>Connecting to room {code}…</p>
       </main>
     );
@@ -229,115 +250,32 @@ export function RoomClient({
     void (document.fullscreenElement
       ? document.exitFullscreen()
       : document.documentElement.requestFullscreen());
-  const exitGame = () => {
-    if (
-      window.confirm(
-        "Exit this game and return to the Game Night ZA start screen?",
-      )
-    )
-      router.push("/");
-  };
+  const exitGame = () => setExitConfirmOpen(true);
 
   return (
     <main
       className={`room-shell ${role} ${controlsHidden ? "controls-hidden" : ""}`}
       onClickCapture={(event) => {
         const target = event.target as HTMLElement;
-        if (soundReady && target.closest("button") && !target.closest(".sound-button"))
-          playSound("click.mp3", 0.65);
+        if(soundReady&&!ambientMuted&&state.phase==="lobby")void getLobbyAudio().play().catch(()=>{});
+        if (soundReady && target.closest("button") && !target.closest(".sound-button")) playSound("click.mp3", 0.65);
       }}
     >
       {!controlsHidden && (
         <header className="room-header">
-          <div className="host-nav">
-            <button className="ghost exit-game" onClick={exitGame}>
-              Exit game
-            </button>
-            {role === "host" && (
-              <button
-                className="ghost new-game"
-                onClick={() => {
-                  if (window.confirm("Start a completely new game? Team names, scores and current progress will be reset.")) {
-                    void act({ type: "newGame" });
-                    setGamePickerOpen(true);
-                  }
-                }}
-              >
-                New game
-              </button>
-            )}
-            {role === "host" && (
-              <button className="ghost" onClick={() => setReviewOpen(true)}>
-                Review
-              </button>
-            )}
-            {role === "host" && <button className="ghost" onClick={() => setLeaderboardOpen(true)}>Leaderboard</button>}
-            {role === "host" && (
-              <button
-                className="ghost"
-                onClick={() => router.push(`/host/${code}/content`)}
-              >
-                Content
-              </button>
-            )}
-          </div>
+          <div className="host-nav" />
           <div className="room-brand">
             GAME <b>NIGHT</b> ZA
           </div>
-          <div className="header-actions">
-            <button
-              className="sound-button"
-              onClick={() => {
-                playSound("click.mp3", 0.65);
-                setSoundReady((value) => !value);
-              }}
-            >
-              {soundReady ? "Sound on" : "Sound off"}
-            </button>
-            <div className="room-code">
-              ROOM <strong>{code}</strong>
-            </div>
-          </div>
+          <div className="header-actions">{role==="host"&&<><button className="ambient-button" aria-label={ambientMuted?"Turn clock and lobby music on":"Mute clock and lobby music"} title={ambientMuted?"Clock and lobby music off":"Clock and lobby music on"} onClick={()=>setAmbientMuted(value=>!value)}><SpeakerIcon muted={ambientMuted}/></button><button className="main-menu-button" onClick={exitGame}>Main menu</button><button className="settings-button" aria-label="Open settings" onClick={()=>setSettingsOpen(true)}><GearIcon/></button></>}</div>
         </header>
       )}
-      <Scoreboard state={state} host={hostControls} act={act} />
-      {role === "host" && !controlsHidden && (
-        <div className="stream-toolbar">
-          <button onClick={() => setGamePickerOpen((value) => !value)}>
-            {gamePickerOpen ? "Close games menu" : "Games menu"} <kbd>G</kbd>
-          </button>
-          <button onClick={toggleFullscreen}>
-            {isFullscreen ? "↙ Exit fullscreen" : "⛶ Fullscreen"} <kbd>F</kbd>
-          </button>
-          <button onClick={() => setControlsHidden(true)}>
-            Broadcast mode <kbd>H</kbd>
-          </button>
-        </div>
-      )}
-      {role === "host" && !controlsHidden && gamePickerOpen && (
-        <nav className="game-tabs">
-          {GAMES.map((g) => (
-            <button
-              key={g.id}
-              className={state.currentGame === g.id ? "selected" : ""}
-              onClick={() => {
-                void act({ type: "selectGame", game: g.id });
-                setGamePickerOpen(false);
-              }}
-            >
-              <GameIcon game={g.id} />
-              {g.name}
-            </button>
-          ))}
-        </nav>
-      )}
+      {state.eventStarted&&<Scoreboard state={state} host={hostControls} act={act} />}
       <section className="game-stage">
-        {!state.currentGame ? (
-          <div className="waiting">
-            <div className="waiting-icon"><GameIcon game="wavelength" /></div>
-            <h2>Choose a game</h2>
-            <p>Use the game picker above to begin.</p>
-          </div>
+        {state.phase==="eventComplete"?<EventComplete state={state} host={hostControls} onNewGame={()=>router.push("/")} onReview={()=>setReviewOpen(true)}/>:!state.eventConfigured?(
+          <LobbySetup state={state} host={hostControls} act={act} onBack={exitGame}/>
+        ):!state.currentGame ? (
+          <GameChoice state={state} host={hostControls} pending={pendingGame} setPending={setPendingGame} onBack={!state.eventStarted?()=>act({type:"editEvent"}):undefined} onContinue={()=>pendingGame&&act({type:"selectGame",game:pendingGame})}/>
         ) : state.phase === "setup" ? (
           <SetupScreen state={state} host={hostControls} act={act} />
         ) : state.phase === "turnComplete" ? (
@@ -369,16 +307,27 @@ export function RoomClient({
       {error && <div className="toast error">{error}</div>}
       {reviewOpen && <ReviewPanel state={state} onClose={() => setReviewOpen(false)} />}
       {leaderboardOpen && <LeaderboardPanel onClose={() => setLeaderboardOpen(false)} />}
+      {settingsOpen&&<SettingsPanel code={code} soundReady={soundReady} setSoundReady={setSoundReady} lobbyVolume={lobbyVolume} setLobbyVolume={setLobbyVolume} close={()=>setSettingsOpen(false)} fullscreen={toggleFullscreen} broadcast={()=>{setControlsHidden(true);setSettingsOpen(false)}} review={()=>{setReviewOpen(true);setSettingsOpen(false)}} leaderboard={()=>{setLeaderboardOpen(true);setSettingsOpen(false)}} content={()=>router.push(`/host/${code}/content`)} mainMenu={exitGame} newSeason={()=>{setSeasonOpen(true);setSettingsOpen(false)}}/>}
+      {seasonOpen&&<NewSeasonPanel close={()=>setSeasonOpen(false)}/>} 
+      {exitConfirmOpen&&<ExitConfirmPanel cancel={()=>setExitConfirmOpen(false)} continueExit={()=>router.push("/")}/>} 
+      {transitionMessage&&<div className={`transition-screen ${transitionLeaving?"leaving":""}`}><div className="transition-emblem">GN</div><div className="loading-bar"><span/></div><strong>{transitionMessage}</strong></div>}
     </main>
   );
 }
+
+function LobbySetup({state,host,act,onBack}:{state:GameState;host:boolean;act:(a:Record<string,unknown>)=>Promise<void>;onBack:()=>void}){const [games,setGames]=useState<GameType[]>(state.selectedGames);return <div className="setup-card lobby-setup"><span className="setup-kicker">Create game night</span><h1>Set up your teams</h1><p>Choose team names, who plays first, and the games for tonight.</p><div className="lobby-teams">{(["A","B"] as TeamKey[]).map(team=><article key={team} className={state.startingTeam===team?"selected":""}><TeamNameEditor team={team} state={state} act={act}/><button disabled={!host} onClick={()=>act({type:"setActiveTeam",team})}>{state.startingTeam===team?`${state.teams[team].name} · PLAYING FIRST`:"Choose to play first"}</button></article>)}</div><h2>Choose your games</h2><div className="event-game-grid">{GAMES.map(g=><button key={g.id} className={games.includes(g.id)?"selected":""} onClick={()=>setGames(v=>v.includes(g.id)?v.filter(x=>x!==g.id):[...v,g.id])}><GameIcon game={g.id}/>{g.name}</button>)}</div>{host&&<div className="flow-actions"><button onClick={onBack}>Back</button><button className="primary-control" disabled={!games.length} onClick={()=>act({type:"configureEvent",games})}>Continue</button></div>}</div>}
+function GameChoice({state,host,pending,setPending,onBack,onContinue}:{state:GameState;host:boolean;pending:GameType|null;setPending:(g:GameType|null)=>void;onBack?:()=>void;onContinue:()=>void}){const remainingGames=state.selectedGames.filter(g=>!state.completedGames.includes(g));useEffect(()=>{if(pending&&!remainingGames.includes(pending))setPending(null)},[state.completedGames.join(","),state.selectedGames.join(",")]);return <div className="setup-card game-choice"><span className="setup-kicker">Game Night ZA</span><h1>Choose a game</h1><p>{state.eventStarted?"Choose from the games still left to play.":"Choose the first game to begin."}</p><div className="event-game-grid">{remainingGames.map(id=>{const g=GAMES.find(item=>item.id===id)!;return <button key={id} className={pending===id?"selected":""} onClick={()=>setPending(id)}><GameIcon game={id}/>{g.name}</button>})}</div>{host&&<div className="flow-actions">{onBack&&<button onClick={onBack}>Back</button>}<button className="primary-control" disabled={!pending} onClick={onContinue}>Continue</button></div>}</div>}
+function EventComplete({state,host,onNewGame,onReview}:{state:GameState;host:boolean;onNewGame:()=>void;onReview:()=>void}){const a=state.teams.A.score,b=state.teams.B.score;return <div className="round-summary event-complete"><span className="setup-kicker">Game night complete</span><h1>{a===b?"It’s a draw!":`${a>b?state.teams.A.name:state.teams.B.name} wins!`}</h1><div className="match-points"><b>{state.teams.A.name}<strong>{a}</strong></b><b>{state.teams.B.name}<strong>{b}</strong></b></div>{host&&<div className="summary-actions"><button onClick={onReview}>Review game</button><button className="primary-control" onClick={onNewGame}>New game</button></div>}</div>}
+function SettingsPanel(p:{code:string;soundReady:boolean;setSoundReady:(v:boolean)=>void;lobbyVolume:number;setLobbyVolume:(v:number)=>void;close:()=>void;fullscreen:()=>void;broadcast:()=>void;review:()=>void;leaderboard:()=>void;content:()=>void;mainMenu:()=>void;newSeason:()=>void}){return <div className="review-backdrop" role="dialog" aria-modal="true" onClick={p.close}><section className="review-panel settings-panel" onClick={e=>e.stopPropagation()}><header><div><span className="setup-kicker">Game Night ZA</span><h2>Settings</h2></div><button onClick={p.close}>Close</button></header><div className="settings-list"><button onClick={p.fullscreen}>Fullscreen <kbd>F</kbd></button><button onClick={p.broadcast}>Broadcast mode <kbd>H</kbd></button><button onClick={p.review}>Review</button><button onClick={p.leaderboard}>Leaderboard</button><button onClick={p.content}>Content</button><button className="sound-button" onClick={()=>p.setSoundReady(!p.soundReady)}>Sound {p.soundReady?"on":"off"}</button><label>Lobby music volume<input type="range" min="0" max="0.6" step="0.02" value={p.lobbyVolume} onChange={e=>p.setLobbyVolume(Number(e.target.value))}/></label><div className="settings-room">ROOM <strong>{p.code}</strong><button onClick={()=>navigator.clipboard.writeText(p.code)}>Copy</button></div><hr/><button onClick={p.mainMenu}>Main menu</button><button className="danger" onClick={p.newSeason}>Start new season</button></div></section></div>}
+function ExitConfirmPanel({cancel,continueExit}:{cancel:()=>void;continueExit:()=>void}){return <div className="review-backdrop exit-confirm-backdrop" role="dialog" aria-modal="true" aria-labelledby="exit-confirm-title" onClick={cancel}><section className="review-panel confirm-panel" onClick={e=>e.stopPropagation()}><span className="setup-kicker">Leave game night?</span><h2 id="exit-confirm-title">Return to the start screen?</h2><p>Your current room will remain unchanged, but starting again from the main menu creates a new room.</p><div className="confirm-actions"><button onClick={cancel}>Cancel</button><button className="primary-control" onClick={continueExit}>Continue</button></div></section></div>}
+function NewSeasonPanel({close}:{close:()=>void}){const [key,setKey]=useState(""),[confirmation,setConfirmation]=useState(""),[message,setMessage]=useState(""),[busy,setBusy]=useState(false);async function reset(){setBusy(true);const r=await fetch("/api/admin/start-new-season",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({key,confirmation})});const d=await r.json();setBusy(false);setMessage(d.error||d.message);if(r.ok)setTimeout(()=>location.reload(),900)}return <div className="review-backdrop" role="dialog" aria-modal="true"><section className="review-panel season-panel"><header><div><span className="setup-kicker">Danger zone</span><h2>Start new season</h2></div><button onClick={close}>Close</button></header><p>This clears standings, matches, reviews and usage history for everyone. Questions remain untouched.</p><label>Administrator PIN<input type="password" value={key} onChange={e=>setKey(e.target.value)}/></label><label>Type <b>START NEW SEASON</b><input value={confirmation} onChange={e=>setConfirmation(e.target.value)}/></label>{message&&<p>{message}</p>}<button className="danger primary-control" disabled={busy||confirmation!=="START NEW SEASON"||!key} onClick={reset}>{busy?"Resetting…":"Start new season"}</button></section></div>}
 
 function SetupScreen({state,host,act}:{state:GameState;host:boolean;act:(a:Record<string,unknown>)=>Promise<void>}) {
   const title=GAMES.find(g=>g.id===state.currentGame)?.name;
   return <div className="setup-card">
     <span className="setup-kicker">Ready to play</span><GameIcon game={state.currentGame!}/><h1>{title}</h1>
-    <p>Choose the first team. Content and timers stay hidden until Start.</p>
-    <div className="starting-team-picker">{(["A","B"] as TeamKey[]).map(team=><button key={team} className={state.startingTeam===team?"selected":""} disabled={!host} onClick={()=>act({type:"setActiveTeam",team})}>{state.teams[team].name}<small>{state.startingTeam===team?"Starts first":"Tap to choose"}</small></button>)}</div>
+    <p>Content and timers stay hidden until the host starts the game.</p>
+    <div className="playing-team-banner">{state.teams[state.startingTeam].name} · PLAYING FIRST</div>
     {host&&<button className="primary-control start-match" onClick={()=>act({type:"beginGame"})}>Start {title}</button>}
   </div>;
 }
@@ -390,7 +339,7 @@ function TurnComplete({state,host,act}:{state:GameState;host:boolean;act:(a:Reco
 
 function MatchComplete({state,host,act,onReview}:{state:GameState;host:boolean;act:(a:Record<string,unknown>)=>Promise<void>;onReview:()=>void}) {
   const a=state.teams.A.score-state.matchStartScores.A,b=state.teams.B.score-state.matchStartScores.B;
-  return <div className="round-summary match-complete"><span className="setup-kicker">Game complete</span><h1>{a===b?"It’s a draw!":`${a>b?state.teams.A.name:state.teams.B.name} wins!`}</h1><div className="match-points"><b>{state.teams.A.name}<strong>+{a}</strong></b><b>{state.teams.B.name}<strong>+{b}</strong></b></div>{host&&<div className="summary-actions"><button onClick={onReview}>Review answers</button><button onClick={()=>act({type:"replayGame"})}>Play again</button><button className="primary-control" onClick={()=>act({type:"gamesMenu"})}>Games menu</button></div>}</div>;
+  return <div className="round-summary match-complete"><span className="setup-kicker">Game complete</span><h1>{a===b?"It’s a draw!":`${a>b?state.teams.A.name:state.teams.B.name} wins!`}</h1><div className="match-points"><b>{state.teams.A.name}<strong>+{a}</strong></b><b>{state.teams.B.name}<strong>+{b}</strong></b></div>{host&&<div className="summary-actions"><button onClick={onReview}>Review answers</button><button className="primary-control" onClick={()=>act({type:"nextGame"})}>Next game</button></div>}</div>;
 }
 
 function ReviewPanel({state,onClose}:{state:GameState;onClose:()=>void}) {
@@ -403,6 +352,8 @@ function LeaderboardPanel({onClose}:{onClose:()=>void}) {
   useEffect(()=>{let live=true;fetch("/api/leaderboard",{cache:"no-store"}).then(r=>r.json()).then(d=>{if(live)setTeams(d.teams??[])}).catch(()=>{}).finally(()=>{if(live)setLoading(false)});return()=>{live=false}},[]);
   return <div className="review-backdrop" role="dialog" aria-modal="true" aria-label="Leaderboard"><section className="review-panel leaderboard-panel"><header><div><span className="setup-kicker">Game Night ZA</span><h2>Leaderboard</h2></div><button onClick={onClose}>Close</button></header>{loading?<p>Loading scores…</p>:teams.length?<div className="leader-table"><div className="leader-head"><span>#</span><span>Team</span><span>Score</span><span>Played</span><span>Wins</span><span>Accuracy</span></div>{teams.map((team,i)=><div key={team.id}><b>{i+1}</b><strong>{team.name}</strong><b>{team.totalScore}</b><span>{team.matchesPlayed}</span><span>{team.gamesWon}</span><span>{team.answersPlayed?Math.round(team.correctAnswers/team.answersPlayed*100):0}%</span></div>)}</div>:<p>The leaderboard will appear after the first completed game.</p>}</section></div>;
 }
+
+function TeamNameEditor({team,state,act}:{team:TeamKey;state:GameState;act:(a:Record<string,unknown>)=>Promise<void>}){const [draft,setDraft]=useState(state.teams[team].name),[note,setNote]=useState("");useEffect(()=>setDraft(state.teams[team].name),[state.teams[team].name]);async function save(){const name=draft.trim().replace(/\s+/g," ");if(!name)return setNote("Enter a team name.");if(name.toLowerCase()===state.teams[team==="A"?"B":"A"].name.toLowerCase())return setNote("Both sides cannot use the same team.");const response=await fetch(`/api/leaderboard?name=${encodeURIComponent(name)}`,{cache:"no-store"}),data=await response.json();setNote(data.teams?.length?"Existing leaderboard team selected.":"New team ready.");await act({type:"renameTeam",team,name});}return <div className="team-name-editor" onClick={e=>e.stopPropagation()}><input className="team-name-input" value={draft} maxLength={24} aria-label={`${team} team name`} onChange={e=>setDraft(e.target.value)} onBlur={()=>void save()} onKeyDown={e=>{if(e.key==="Enter")void save()}}/>{note&&<small>{note}</small>}</div>}
 
 function Scoreboard({
   state,
@@ -424,7 +375,7 @@ function Scoreboard({
           onClick={() => host && act({ type: "setActiveTeam", team })}
         >
           {host ? (
-            <input className="team-name-input" value={state.teams[team].name} maxLength={24} aria-label={`${team} team name`} onClick={(e)=>e.stopPropagation()} onChange={(e)=>act({type:"renameTeam",team,name:e.target.value})}/>
+            <TeamNameEditor team={team} state={state} act={act}/>
           ) : (
             <span className="team-name">{state.teams[team].name}</span>
           )}
@@ -669,6 +620,10 @@ function GameView({
         game === "wavelength" && waveFeedback
           ? `wavelength-feedback-${waveFeedback}`
           : ""
+      } ${
+        game === "bomb" && state.phase === "playing" && seconds === 0
+          ? "bomb-exploded"
+          : ""
       }`}
     >
       <div className="game-heading">
@@ -706,7 +661,7 @@ function GameView({
                   })
                 }
               >
-                {state.timer.running ? "⏸ Pause" : "▶ Resume"}
+                {state.timer.running ? <><PauseIcon/> Pause</> : <><PlayIcon/> Resume</>}
               </button>
             )}
           </div>
@@ -724,7 +679,7 @@ function GameView({
               disabled={Boolean(spellingFeedback)}
               onClick={() => speakWord(state.currentContent?.prompt || "")}
             >
-              🔊 Repeat word
+              <SpeakerIcon muted={false}/> Repeat word
             </button>
           )}
 
@@ -767,7 +722,7 @@ function GameView({
               ? answeredTaboo.forbidden
               : (meta.taboo as string[]) || []
             ).map((word) => (
-              <span key={word}>🚫 {word}</span>
+              <span key={word}><BanIcon/> {word}</span>
             ))}
           </div>
 
@@ -1130,6 +1085,15 @@ function GameView({
   );
 }
 
+function SpeakerIcon({muted}:{muted:boolean}) {
+  return <svg className="speaker-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z"/>{muted?<><path d="m16 9 5 6"/><path d="m21 9-5 6"/></>:<><path d="M15 8.5a5 5 0 0 1 0 7"/><path d="M18 5.5a9 9 0 0 1 0 13"/></>}</svg>;
+}
+
+function GearIcon(){return <svg className="control-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.6v-.1A1.7 1.7 0 0 0 8.5 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3V9.6h.1A1.7 1.7 0 0 0 4.6 8.5a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.1A1.7 1.7 0 0 0 15.5 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.18.38.48.7.86.9.3.16.64.23.98.2H21v4h-.1A1.7 1.7 0 0 0 19.4 15Z"/></svg>}
+function PauseIcon(){return <svg className="control-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>}
+function PlayIcon(){return <svg className="control-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m7 4 13 8-13 8V4Z"/></svg>}
+function BanIcon(){return <svg className="control-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m6 6 12 12"/></svg>}
+
 function GameIcon({ game }: { game: GameType }) {
   const common = {
     viewBox: "0 0 64 64",
@@ -1233,6 +1197,7 @@ function noiseBurst(
   source.stop(time + duration);
 }
 const gameSounds: Record<string, HTMLAudioElement> = {};
+function getLobbyAudio(){const audio=gameSounds["lobby.mp3"]??(gameSounds["lobby.mp3"]=new Audio("/sounds/lobby.mp3"));audio.loop=true;return audio;}
 
 function playSound(file: string, volume = 1) {
   try {

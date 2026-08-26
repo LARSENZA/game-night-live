@@ -12,11 +12,25 @@ Then verify and deploy with `npx vite build` followed by `npm run deploy`.
 Migration `0003_match_flow_leaderboard.sql` adds the persistent leaderboard,
 answer-review records and content-use tracking. Migrations `0004`–`0006` add
 the expanded global game banks: 1,000 Spelling words, 1,000 Password words,
-1,000 Taboo cards, 1,000 Wavelength prompts, 300 Bomb letter pairs and more
-than 1,000 Fifth Grader questions. Existing room JSON is upgraded when loaded.
+1,000 Wavelength prompts, 300 Bomb letter pairs and more than 1,000 Fifth
+Grader questions. Migration `0007` retires the dictionary-derived Taboo data
+and activates 220 hand-curated cards with five obvious prohibited clue words
+each. Existing room JSON is upgraded when loaded.
 The picker opens a setup screen: choose the starting team and press Start; after
 both teams play, the game shows a final result. Music remains an external/manual
 round.
+
+Configure the owner-only season reset once in production (enter your own PIN
+when prompted; never commit it to GitHub):
+
+```powershell
+npx wrangler secret put ADMIN_RESET_KEY
+```
+
+The Settings gear now contains Games, Fullscreen, Broadcast mode, Review,
+Leaderboard, Content, sound controls, the room code and destructive actions.
+**Start New Season** clears standings and historical match records for everyone
+while preserving all question banks.
 
 ![Game Night ZA](./public/og-image.png)
 
