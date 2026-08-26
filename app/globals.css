@@ -1275,7 +1275,7 @@ button:disabled {
 }
 
 .scoreboard article::before {
-  content: "TEAM " attr(data-team);
+  content: attr(data-team-name);
   position: absolute;
   top: 7px;
   left: 18px;
@@ -1296,7 +1296,7 @@ button:disabled {
 }
 
 .scoreboard article.active::before {
-  content: "▶ TEAM " attr(data-team) " · PLAYING";
+  content: "▶ " attr(data-team-name) " · PLAYING";
   color: var(--gold);
 }
 

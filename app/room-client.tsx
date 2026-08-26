@@ -370,6 +370,7 @@ function Scoreboard({
         <article
           key={team}
           data-team={team}
+          data-team-name={state.teams[team].name}
           aria-current={state.activeTeam === team ? "true" : undefined}
           className={state.activeTeam === team ? "active" : ""}
           onClick={() => host && act({ type: "setActiveTeam", team })}
@@ -575,7 +576,7 @@ function GameView({
 
   const [answeredWord, setAnsweredWord] = useState("");
 
-  function answerSpelling(result: "correct" | "wrong") {
+  async function answerSpelling(result: "correct" | "wrong") {
     if (spellingFeedback) return;
 
     setAnsweredWord(state.currentContent?.prompt || "");
@@ -587,7 +588,7 @@ function GameView({
 
     // Update the score and prepare the next word immediately.
     // The answered word remains displayed during the animation.
-    void act({
+    await act({
       type: result === "correct" ? "correct" : "pass",
     });
 
@@ -1012,7 +1013,7 @@ function GameView({
                       })
                     }
                   >
-                    Team A held it
+                    {state.teams.A.name} held it
                   </button>
 
                   <button
@@ -1023,7 +1024,7 @@ function GameView({
                       })
                     }
                   >
-                    Team B held it
+                    {state.teams.B.name} held it
                   </button>
                 </div>
               )}
