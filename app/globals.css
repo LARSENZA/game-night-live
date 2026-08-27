@@ -2688,7 +2688,7 @@ button:not(:disabled):hover{filter:brightness(1.1)}
   min-height:0;
   grid-template-rows:repeat(2,minmax(68px,1fr));
 }
-.lobby-setup .event-game-grid button{min-height:0;padding:7px}
+.lobby-setup .event-game-grid button{min-height:0;padding:7px;font-size:clamp(20px,2.4vw,30px);font-weight:950;line-height:1.05}
 .lobby-setup .event-game-grid button .game-icon{width:clamp(30px,3vw,43px);height:clamp(30px,3vw,43px)}
 .lobby-setup .flow-actions{align-self:end;margin:0}
 .lobby-setup .flow-actions button{min-height:46px}
