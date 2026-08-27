@@ -83,6 +83,7 @@ export function RoomClient({
   const [settingsOpen,setSettingsOpen]=useState(false);
   const [seasonOpen,setSeasonOpen]=useState(false);
   const [exitConfirmOpen,setExitConfirmOpen]=useState(false);
+  const [restartConfirmOpen,setRestartConfirmOpen]=useState(false);
   const [transitionMessage,setTransitionMessage]=useState("");
   const [transitionLeaving,setTransitionLeaving]=useState(false);
   const [lobbyVolume,setLobbyVolume]=useState(0.22);
@@ -267,7 +268,7 @@ export function RoomClient({
           <div className="room-brand">
             GAME <b>NIGHT</b> ZA
           </div>
-          <div className="header-actions">{role==="host"&&<><button className="ambient-button" aria-label={ambientMuted?"Turn clock and lobby music on":"Mute clock and lobby music"} title={ambientMuted?"Clock and lobby music off":"Clock and lobby music on"} onClick={()=>setAmbientMuted(value=>!value)}><SpeakerIcon muted={ambientMuted}/></button><button className="main-menu-button" onClick={exitGame}>Main menu</button><button className="settings-button" aria-label="Open settings" onClick={()=>setSettingsOpen(true)}><GearIcon/></button></>}</div>
+          <div className="header-actions">{role==="host"&&<><button className="ambient-button" aria-pressed={ambientMuted} aria-label={ambientMuted?"Turn clock and lobby music on":"Mute clock and lobby music"} title={ambientMuted?"Clock and lobby music off":"Clock and lobby music on"} onClick={()=>setAmbientMuted(value=>!value)}><SpeakerIcon muted={ambientMuted}/></button><button className="main-menu-button" onClick={exitGame}>Main menu</button><button className="settings-button" aria-label="Open settings" onClick={()=>setSettingsOpen(true)}><GearIcon/></button></>}</div>
         </header>
       )}
       {state.eventStarted&&<Scoreboard state={state} host={hostControls} act={act} />}
@@ -293,6 +294,7 @@ export function RoomClient({
             setClue={setClue}
             guess={guess}
             setGuess={setGuess}
+            onRestart={()=>setRestartConfirmOpen(true)}
           />
         )}
       </section>
@@ -310,6 +312,7 @@ export function RoomClient({
       {settingsOpen&&<SettingsPanel code={code} soundReady={soundReady} setSoundReady={setSoundReady} lobbyVolume={lobbyVolume} setLobbyVolume={setLobbyVolume} close={()=>setSettingsOpen(false)} fullscreen={toggleFullscreen} broadcast={()=>{setControlsHidden(true);setSettingsOpen(false)}} review={()=>{setReviewOpen(true);setSettingsOpen(false)}} leaderboard={()=>{setLeaderboardOpen(true);setSettingsOpen(false)}} content={()=>router.push(`/host/${code}/content`)} mainMenu={exitGame} newSeason={()=>{setSeasonOpen(true);setSettingsOpen(false)}}/>}
       {seasonOpen&&<NewSeasonPanel close={()=>setSeasonOpen(false)}/>} 
       {exitConfirmOpen&&<ExitConfirmPanel cancel={()=>setExitConfirmOpen(false)} continueExit={()=>router.push("/")}/>} 
+      {restartConfirmOpen&&<RestartTurnPanel teamName={state.teams[state.activeTeam].name} cancel={()=>setRestartConfirmOpen(false)} restart={()=>{setRestartConfirmOpen(false);void act({type:"restartTurn"})}}/>}
       {transitionMessage&&<div className={`transition-screen ${transitionLeaving?"leaving":""}`}><div className="transition-emblem">GN</div><div className="loading-bar"><span/></div><strong>{transitionMessage}</strong></div>}
     </main>
   );
@@ -320,6 +323,7 @@ function GameChoice({state,host,pending,setPending,onBack,onContinue}:{state:Gam
 function EventComplete({state,host,onNewGame,onReview}:{state:GameState;host:boolean;onNewGame:()=>void;onReview:()=>void}){const a=state.teams.A.score,b=state.teams.B.score;return <div className="round-summary event-complete"><span className="setup-kicker">Game night complete</span><h1>{a===b?"It’s a draw!":`${a>b?state.teams.A.name:state.teams.B.name} wins!`}</h1><div className="match-points"><b>{state.teams.A.name}<strong>{a}</strong></b><b>{state.teams.B.name}<strong>{b}</strong></b></div>{host&&<div className="summary-actions"><button onClick={onReview}>Review game</button><button className="primary-control" onClick={onNewGame}>New game</button></div>}</div>}
 function SettingsPanel(p:{code:string;soundReady:boolean;setSoundReady:(v:boolean)=>void;lobbyVolume:number;setLobbyVolume:(v:number)=>void;close:()=>void;fullscreen:()=>void;broadcast:()=>void;review:()=>void;leaderboard:()=>void;content:()=>void;mainMenu:()=>void;newSeason:()=>void}){return <div className="review-backdrop" role="dialog" aria-modal="true" onClick={p.close}><section className="review-panel settings-panel" onClick={e=>e.stopPropagation()}><header><div><span className="setup-kicker">Game Night ZA</span><h2>Settings</h2></div><button onClick={p.close}>Close</button></header><div className="settings-list"><button onClick={p.fullscreen}>Fullscreen <kbd>F</kbd></button><button onClick={p.broadcast}>Broadcast mode <kbd>H</kbd></button><button onClick={p.review}>Review</button><button onClick={p.leaderboard}>Leaderboard</button><button onClick={p.content}>Content</button><button className="sound-button" onClick={()=>p.setSoundReady(!p.soundReady)}>Sound {p.soundReady?"on":"off"}</button><label>Lobby music volume<input type="range" min="0" max="0.6" step="0.02" value={p.lobbyVolume} onChange={e=>p.setLobbyVolume(Number(e.target.value))}/></label><div className="settings-room">ROOM <strong>{p.code}</strong><button onClick={()=>navigator.clipboard.writeText(p.code)}>Copy</button></div><hr/><button onClick={p.mainMenu}>Main menu</button><button className="danger" onClick={p.newSeason}>Start new season</button></div></section></div>}
 function ExitConfirmPanel({cancel,continueExit}:{cancel:()=>void;continueExit:()=>void}){return <div className="review-backdrop exit-confirm-backdrop" role="dialog" aria-modal="true" aria-labelledby="exit-confirm-title" onClick={cancel}><section className="review-panel confirm-panel" onClick={e=>e.stopPropagation()}><span className="setup-kicker">Leave game night?</span><h2 id="exit-confirm-title">Return to the start screen?</h2><p>Your current room will remain unchanged, but starting again from the main menu creates a new room.</p><div className="confirm-actions"><button onClick={cancel}>Cancel</button><button className="primary-control" onClick={continueExit}>Continue</button></div></section></div>}
+function RestartTurnPanel({teamName,cancel,restart}:{teamName:string;cancel:()=>void;restart:()=>void}){return <div className="review-backdrop" role="dialog" aria-modal="true" aria-labelledby="restart-turn-title" onClick={cancel}><section className="review-panel confirm-panel" onClick={e=>e.stopPropagation()}><span className="setup-kicker">Restart current turn?</span><h2 id="restart-turn-title">Restart {teamName}&apos;s turn?</h2><p>Points and answer history earned during this turn will be removed. The other team and previous games will not be changed.</p><div className="confirm-actions"><button onClick={cancel}>Cancel</button><button className="danger restart-confirm" onClick={restart}>Restart turn</button></div></section></div>}
 function NewSeasonPanel({close}:{close:()=>void}){const [key,setKey]=useState(""),[confirmation,setConfirmation]=useState(""),[message,setMessage]=useState(""),[busy,setBusy]=useState(false);async function reset(){setBusy(true);const r=await fetch("/api/admin/start-new-season",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({key,confirmation})});const d=await r.json();setBusy(false);setMessage(d.error||d.message);if(r.ok)setTimeout(()=>location.reload(),900)}return <div className="review-backdrop" role="dialog" aria-modal="true"><section className="review-panel season-panel"><header><div><span className="setup-kicker">Danger zone</span><h2>Start new season</h2></div><button onClick={close}>Close</button></header><p>This clears standings, matches, reviews and usage history for everyone. Questions remain untouched.</p><label>Administrator PIN<input type="password" value={key} onChange={e=>setKey(e.target.value)}/></label><label>Type <b>START NEW SEASON</b><input value={confirmation} onChange={e=>setConfirmation(e.target.value)}/></label>{message&&<p>{message}</p>}<button className="danger primary-control" disabled={busy||confirmation!=="START NEW SEASON"||!key} onClick={reset}>{busy?"Resetting…":"Start new season"}</button></section></div>}
 
 function SetupScreen({state,host,act}:{state:GameState;host:boolean;act:(a:Record<string,unknown>)=>Promise<void>}) {
@@ -426,6 +430,7 @@ function GameView({
   setClue,
   guess,
   setGuess,
+  onRestart,
 }: {
   state: GameState;
   meta: Record<string, unknown>;
@@ -436,6 +441,7 @@ function GameView({
   setClue: (v: string) => void;
   guess: number;
   setGuess: (v: number) => void;
+  onRestart: () => void;
 }) {
   const game = state.currentGame!;
   const selectedBombRule = BOMB_LOTTERY.find(
@@ -629,8 +635,10 @@ function GameView({
     >
       <div className="game-heading">
         <span>{GAMES.find((g) => g.id === game)?.name}</span>
-        {state.timer.total > 0 && (
+        {(host || state.timer.total > 0) && (
           <div className="timer-tools">
+            {host&&<button className="restart-turn-button" onClick={onRestart}>Restart turn</button>}
+            {state.timer.total > 0 && <>
             {game === "bomb" ? (
               <div className="bomb-fuse-status">
                 {state.timer.running
@@ -665,6 +673,7 @@ function GameView({
                 {state.timer.running ? <><PauseIcon/> Pause</> : <><PlayIcon/> Resume</>}
               </button>
             )}
+            </>}
           </div>
         )}
       </div>

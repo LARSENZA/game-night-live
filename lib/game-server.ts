@@ -10,7 +10,7 @@ export function randomCode(){const c="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";return A
 
 export function hydrateState(raw:Partial<GameState>):GameState {
   const base=initialState();
-  return {...base,...raw,teams:{...base.teams,...raw.teams},timer:{...base.timer,...raw.timer},bomb:{...base.bomb,...raw.bomb},wavelength:{...base.wavelength,...raw.wavelength},musicPoints:{...base.musicPoints,...raw.musicPoints},selectedGames:raw.selectedGames??[],completedGames:raw.completedGames??[],eventConfigured:raw.eventConfigured??false,eventStarted:raw.eventStarted??false,review:raw.review??[],usedContent:raw.usedContent??{},matchStartScores:raw.matchStartScores??{A:raw.teams?.A?.score??0,B:raw.teams?.B?.score??0}};
+  return {...base,...raw,teams:{...base.teams,...raw.teams},timer:{...base.timer,...raw.timer},bomb:{...base.bomb,...raw.bomb},wavelength:{...base.wavelength,...raw.wavelength},musicPoints:{...base.musicPoints,...raw.musicPoints},selectedGames:raw.selectedGames??[],completedGames:raw.completedGames??[],eventConfigured:raw.eventConfigured??false,eventStarted:raw.eventStarted??false,review:raw.review??[],usedContent:raw.usedContent??{},matchStartScores:raw.matchStartScores??{A:raw.teams?.A?.score??0,B:raw.teams?.B?.score??0},turnStartScores:raw.turnStartScores??{A:raw.teams?.A?.score??0,B:raw.teams?.B?.score??0}};
 }
 
 export async function ensureSeeded(){const db=getDb();const existing=await db.select({gameType:gameContent.gameType,prompt:gameContent.prompt}).from(gameContent).where(isNull(gameContent.ownerRoomId));const keys=new Set(existing.map(x=>`${x.gameType}\0${x.prompt}`));const missing=DEFAULT_CONTENT.filter(x=>!keys.has(`${x.gameType}\0${x.prompt}`)).map(x=>({gameType:x.gameType,prompt:x.prompt,answer:x.answer,category:x.category,metadata:JSON.stringify(x.metadata)}));for(let i=0;i<missing.length;i+=10)await db.insert(gameContent).values(missing.slice(i,i+10));}
@@ -37,6 +37,7 @@ async function record(state:GameState,roomId:string,result:ReviewItem["result"],
 }
 
 async function beginTurn(state:GameState,roomId:string){
+  state.turnStartScores={A:state.teams.A.score,B:state.teams.B.score};
   state.answerShown=false;state.passwordClues=[];state.musicPoints={title:false,artist:false,lyrics:false};state.wavelength={target:Math.floor(Math.random()*11),guess:5,points:0};state.bomb={rule:null,duration:0};state.timer={running:false,total:0,endsAt:null,pausedRemaining:null};
   state.currentContent=state.currentGame&&state.currentGame!=="music"&&state.currentGame!=="bomb"?await nextContent(state,state.currentGame,roomId):null;
   // Bomb must begin at the die-roll stage. Entering `playing` here would make
@@ -70,6 +71,15 @@ export async function applyAction(input:GameState,action:Record<string,unknown>,
   if(type==="selectGame") {const game=action.game as GameType;if(!["spelling","taboo","music","password","bomb","trivia","wavelength"].includes(game)||state.completedGames.includes(game)||(state.selectedGames.length&&!state.selectedGames.includes(game)))return state;state.currentGame=game;state.phase="setup";state.turnNumber=0;state.currentContent=null;state.timer={running:false,total:0,endsAt:null,pausedRemaining:null};state.answerShown=false;return state;}
   if(type==="beginGame"&&state.currentGame&&state.phase==="setup"){state.eventStarted=true;state.activeTeam=state.startingTeam;state.turnNumber=1;state.matchId=crypto.randomUUID();state.matchStartScores={A:state.teams.A.score,B:state.teams.B.score};state.usedContent[state.currentGame]=[];state.review=state.review.filter(x=>x.game!==state.currentGame);await getDb().insert(gameSessions).values({id:state.matchId,roomId,gameType:state.currentGame,teamAName:state.teams.A.name,teamBName:state.teams.B.name});await beginTurn(state,roomId);return state;}
   if(type==="nextTeam"&&state.phase==="turnComplete"){state.activeTeam=other(state.startingTeam);state.turnNumber=2;await beginTurn(state,roomId);return state;}
+  if(type==="restartTurn"&&state.currentGame&&state.matchId&&state.turnNumber>0&&!['turnComplete','matchComplete','eventComplete','setup','lobby'].includes(state.phase)){
+    const team=state.activeTeam,teamName=state.teams[team].name,db=getDb();
+    state.teams[team].score=state.turnStartScores[team];
+    state.review=state.review.filter(item=>!(item.game===state.currentGame&&item.team===team));
+    await db.delete(rounds).where(and(eq(rounds.sessionId,state.matchId),eq(rounds.team,team)));
+    await db.delete(contentUsage).where(and(eq(contentUsage.sessionId,state.matchId),eq(contentUsage.teamName,teamName)));
+    await beginTurn(state,roomId);
+    return state;
+  }
   if(type==="completeTurn"&&state.phase==="result"){await completeTurn(state,roomId);return state;}
   if(type==="gamesMenu"||type==="nextGame"){if(state.currentGame&&!state.completedGames.includes(state.currentGame))state.completedGames.push(state.currentGame);const remaining=state.selectedGames.filter(g=>!state.completedGames.includes(g));state.turnNumber=0;state.currentContent=null;stopTimer(state);if(!remaining.length){state.currentGame=null;state.phase="eventComplete";}else if(remaining.length===1){state.currentGame=remaining[0];state.phase="setup";}else{state.currentGame=null;state.phase="lobby";}return state;}
   if(type==="replayGame"&&state.currentGame){state.phase="setup";state.turnNumber=0;state.currentContent=null;return state;}
