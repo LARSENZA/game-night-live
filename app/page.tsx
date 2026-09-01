@@ -44,7 +44,7 @@ export default function Home() {
           GAME <span>NIGHT</span> ZA
         </h1>
         <p className="lead">
-          Open the game, share this browser window, and run all seven team games
+          Open the game, share this browser window, and run every team game
           from the same screen—on phone or PC.
         </p>
         <div className="landing-actions">
@@ -80,7 +80,7 @@ export default function Home() {
         )}
         <div className="feature-strip">
           <span>2 teams</span>
-          <span>7 games</span>
+          <span>13 game modes</span>
           <span>No player accounts</span>
           <span>Live score sync</span>
         </div>

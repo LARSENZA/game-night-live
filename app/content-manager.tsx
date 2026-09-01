@@ -21,6 +21,13 @@ const TYPES: GameType[] = [
   "bomb",
   "trivia",
   "wavelength",
+  "top_answers",
+  "moji",
+  "rapid_fire",
+  "charades",
+  "scavenger",
+  "five_alive",
+  "crowd",
 ];
 const EMPTY = {
   gameType: "trivia" as GameType,

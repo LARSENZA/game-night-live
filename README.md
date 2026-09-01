@@ -34,6 +34,8 @@ while preserving all question banks.
 
 ![Game Night ZA](./public/og-image.png)
 
+Vegetable artwork used by Veggie Bomb is provided by [OpenMoji](https://openmoji.org/) under the [CC BY-SA 4.0 licence](https://creativecommons.org/licenses/by-sa/4.0/).
+
 A host-controlled party-game platform built for TikTok Live and other shared-screen game nights. One host opens the site, shares the same browser window and runs the entire game while players participate through the livestream.
 
 **Live application:** [gamenightza.com](https://gamenightza.com)  

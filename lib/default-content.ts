@@ -1,7 +1,18 @@
-import { TABOO_BANK } from "./taboo-bank";
+import { TABOO_BANK } from "./taboo-bank-v4";
+import { SPELLING_BANK_V2 } from "./spelling-bank-v2";
+import { EXPANSION_CONTENT } from "./expansion-content";
+import { EXPANSION_BANK_V2 } from "./expansion-bank-v2";
+import { PHYSICAL_GAMES_CONTENT } from "./physical-games-content";
+import { FIVE_ALIVE_BANK } from "./five-alive-bank";
+import { FIFTH_GRADER_BANK_V2 } from "./fifth-grader-bank-v2";
+import { CROWD_CLASH_BANK_V2 } from "./crowd-clash-bank-v2";
 
 export const DEFAULT_CONTENT = [
-  ...["cat","house","umbrella","giraffe","rhythm","necessary","definitely","separate","embarrass","occurrence","restaurant","calendar","vacuum","licence","jewellery","mosquito","pneumonia","entrepreneur","silhouette","bureaucracy","conscience","questionnaire","maintenance","privilege","receipt","accommodate","camouflage","fluorescent","hierarchy"].map(prompt => ({ gameType:"spelling", prompt, answer:prompt, category:"Mixed", metadata:{} })),
+  ...EXPANSION_CONTENT,
+  ...EXPANSION_BANK_V2,
+  ...PHYSICAL_GAMES_CONTENT,
+  ...FIVE_ALIVE_BANK,
+  ...SPELLING_BANK_V2.map(([prompt, category]) => ({ gameType:"spelling" as const, prompt, answer:prompt, category, metadata:{} })),
   ...TABOO_BANK.map(([prompt, category, taboo]) => ({
     gameType: "taboo" as const,
     prompt,
@@ -9,6 +20,14 @@ export const DEFAULT_CONTENT = [
     category,
     metadata: { taboo: [...taboo] },
   })),
+  ...FIFTH_GRADER_BANK_V2.map(([category, prompt, answer]) => ({
+    gameType: "trivia" as const,
+    prompt,
+    answer,
+    category,
+    metadata: {},
+  })),
+  ...CROWD_CLASH_BANK_V2,
   ...["Ocean","Guitar","Robot","Volcano","Whisper","Diamond","Jungle","Rocket","Shadow","Compass","Thunder","Pirate","Castle","Firework","Mirror","Puzzle","Lantern","Feather","Glacier","Carnival","Marathon","Telescope","Waterfall","Avalanche","Blueprint"].map(prompt => ({ gameType:"password", prompt, answer:prompt, category:"General", metadata:{} })),
   ...["DE","ST","AN","ER","IN","RE","TH","EA","OU","CK","SH","TR","PL","QU","AR","OR","LO","TI","CA","ME","NA","LI","RO","BE","SO"].map(prompt => ({ gameType:"bomb", prompt, answer:null, category:"Fragment", metadata:{} })),
   ...[

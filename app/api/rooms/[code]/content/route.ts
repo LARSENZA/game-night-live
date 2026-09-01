@@ -11,6 +11,13 @@ const GAME_TYPES: GameType[] = [
   "bomb",
   "trivia",
   "wavelength",
+  "top_answers",
+  "moji",
+  "rapid_fire",
+  "charades",
+  "scavenger",
+  "five_alive",
+  "crowd",
 ];
 
 async function authorized(request: Request, code: string) {
@@ -219,6 +226,27 @@ function normalizeItem(value: unknown) {
     )
       return null;
     metadataObject.taboo = taboo;
+  }
+  if (gameType === "top_answers") {
+    const answers = metadataObject.answers;
+    if (!Array.isArray(answers) || answers.length !== 5) return null;
+    const normalizedAnswers = answers.map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const answer = entry as Record<string, unknown>;
+      const text = String(answer.text ?? "").trim().slice(0, 80);
+      const points = Number(answer.points);
+      return text && Number.isFinite(points) && points > 0
+        ? { text, points: Math.round(points) }
+        : null;
+    });
+    if (normalizedAnswers.some((answer) => !answer)) return null;
+    const texts = normalizedAnswers.map((answer) => answer!.text.toLowerCase());
+    if (new Set(texts).size !== 5) return null;
+    metadataObject.answers = normalizedAnswers;
+  }
+  if (["moji", "rapid_fire", "charades", "five_alive", "crowd"].includes(gameType)) {
+    const answer = String(raw.answer ?? "").trim();
+    if (!answer) return null;
   }
 
   const metadata = JSON.stringify(metadataObject);
