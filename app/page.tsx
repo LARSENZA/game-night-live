@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { readJsonResponse } from "@/lib/client-response";
 
 export default function Home() {
   const router = useRouter();
@@ -15,8 +16,10 @@ export default function Home() {
     setError("");
     try {
       const response = await fetch("/api/rooms", { method: "POST" });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Could not create room");
+      const data = await readJsonResponse<{ code: string; hostToken: string }>(
+        response,
+        "Could not create room",
+      );
       localStorage.setItem(`host-token:${data.code}`, data.hostToken);
       // The opening sequence is deliberately longer than in-game scene changes.
       await new Promise((resolve) =>

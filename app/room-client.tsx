@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { GameState, GameType, RoomPayload, TeamKey } from "@/lib/types";
 import { WikiProduceImage } from "./wiki-produce-image";
 import { getPunctuationExample } from "@/lib/punctuation-examples";
+import { readJsonResponse } from "@/lib/client-response";
 
 const GAMES: { id: GameType; name: string }[] = [
   { id: "spelling", name: "SPELLING BEE" },
@@ -139,6 +140,7 @@ export function RoomClient({
   const previousSpokenWord = useRef("");
   const spellingWordStartedAt=useRef(0);
   const serverClockOffset = useRef(0);
+  const roomLoadInFlight = useRef(false);
 
   useEffect(() => {
     const readPreferences = () => {
@@ -200,16 +202,19 @@ export function RoomClient({
   };
 
   const load = useCallback(async () => {
+    if (roomLoadInFlight.current) return;
+    roomLoadInFlight.current = true;
     try {
       const requestStarted = Date.now();
       const response = await fetch(`/api/rooms/${code}`, { cache: "no-store" });
-      const data = await response.json();
+      const data = await readJsonResponse<RoomPayload>(response, "Room unavailable");
       syncServerClock(data.serverNow, requestStarted, serverClockOffset);
-      if (!response.ok) throw new Error(data.error || "Room unavailable");
       setRoom(data);
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Room unavailable");
+    } finally {
+      roomLoadInFlight.current = false;
     }
   }, [code]);
 
@@ -218,7 +223,13 @@ export function RoomClient({
       void load();
       setNow(Date.now() + serverClockOffset.current);
     }, 0);
-    const poll = setInterval(load, 800);
+    const poll = setInterval(() => {
+      if (document.visibilityState === "visible") void load();
+    }, 2500);
+    const resume = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    document.addEventListener("visibilitychange", resume);
     const clock = setInterval(
       () => setNow(Date.now() + serverClockOffset.current),
       250,
@@ -227,6 +238,7 @@ export function RoomClient({
       clearTimeout(initial);
       clearInterval(poll);
       clearInterval(clock);
+      document.removeEventListener("visibilitychange", resume);
     };
   }, [load]);
   useEffect(() => {
@@ -333,10 +345,16 @@ export function RoomClient({
       },
       body: JSON.stringify(action),
     });
-    const data = await response.json();
+    let data: RoomPayload;
+    try {
+      data = await readJsonResponse<RoomPayload>(response, "Action failed");
+    } catch (error) {
+      if(hasTransition)setTransitionMessage("");
+      setError(error instanceof Error ? error.message : "Action failed");
+      return;
+    }
     if(hasTransition)await new Promise(resolve=>setTimeout(resolve,Math.max(0,1150-(Date.now()-started))));
     syncServerClock(data.serverNow, requestStarted, serverClockOffset);
-    if (!response.ok){setTransitionMessage("");return setError(data.error || "Action failed")}
     setRoom(data);
     if(hasTransition){setTransitionLeaving(true);await new Promise(resolve=>setTimeout(resolve,280));setTransitionMessage("");setTransitionLeaving(false)}
   }

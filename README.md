@@ -15,7 +15,8 @@ the expanded global game banks: 1,000 Spelling words, 1,000 Password words,
 1,000 Wavelength prompts, 300 Bomb letter pairs and more than 1,000 Fifth
 Grader questions. Migration `0007` retires the dictionary-derived Taboo data
 and activates 220 hand-curated cards with five obvious prohibited clue words
-each. Existing room JSON is upgraded when loaded.
+each. Migration `0010` adds read-efficient indexes for room history, content
+usage and room-specific settings. Existing room JSON is upgraded when loaded.
 The picker opens a setup screen: choose the starting team and press Start; after
 both teams play, the game shows a final result. Music remains an external/manual
 round.
@@ -81,7 +82,7 @@ A host-controlled party-game platform built for TikTok Live and other shared-scr
 
 ## Architecture
 
-The host creates a room through the API and receives a private host token stored in that browser. Game actions are authorized by that token and persisted as room state in D1. The host and optional display clients refresh shared room state frequently, while timers use server-generated end timestamps so reconnecting clients calculate the same remaining time.
+The host creates a room through the API and receives a private host token stored in that browser. Game actions are authorized by that token and persisted as room state in D1. The host and optional display clients refresh shared room state every 2.5 seconds while visible and stop polling while hidden. Host actions return the updated state immediately, while timers use server-generated end timestamps so reconnecting clients calculate the same remaining time. The private Answer Key loads historical rounds only when a team-history tab is opened.
 
 Default and room-specific questions are stored in D1. Used content IDs are tracked per game and room, preventing Team B from receiving a question already shown to Team A until the eligible question bank has been exhausted.
 

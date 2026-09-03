@@ -28,7 +28,10 @@ function triviaSubject(category:string|null){
 }
 
 export async function nextContent(state:GameState,gameType:GameType,roomId:string,categories?:string[]){
-  await ensureSeeded(); const db=getDb();
+  // Default content is installed by D1 migrations. Running ensureSeeded here
+  // scanned the entire global bank before every question and exhausted D1's
+  // daily row-read allowance as the bank grew.
+  const db=getDb();
   const rows=await db.select().from(gameContent).where(and(eq(gameContent.gameType,gameType),eq(gameContent.isActive,true),or(isNull(gameContent.ownerRoomId),eq(gameContent.ownerRoomId,roomId))));
   const settings=await db.select().from(roomContentSettings).where(eq(roomContentSettings.roomId,roomId)); const disabled=new Set(settings.filter(x=>!x.enabled).map(x=>x.contentId));
   const enabled=rows.filter(x=>!disabled.has(x.id)&&(!categories?.length||categories.includes(x.category??"")));if(!enabled.length)return null;
