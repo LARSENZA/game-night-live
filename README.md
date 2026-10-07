@@ -1,4 +1,23 @@
-# Game Night ZA
+Game Night ZA
+
+Host-controlled party games for TikTok Live and shared-screen game nights. Two teams, seven game modes, no player accounts.
+
+**Live:** https://gamenightza.com
+
+![Screenshot](docs/screenshot.png)  <!-- add a real screenshot -->
+
+**Stack:** React, TypeScript, Cloudflare Workers, Cloudflare D1 (SQLite), Drizzle ORM
+
+## How it works
+- The host creates a room and receives a private token. Only its SHA-256 hash is stored in D1.
+- Every host action carries the token and is checked on the server before the state changes.
+- Room state (scores, current question, used question IDs) is stored in D1. Viewers poll for updates, and timers use server timestamps.
+- Used question IDs are tracked per game type, so content does not repeat until the bank is exhausted.
+
+## Known limitations
+- Sync is polling, not WebSockets.
+- Each action rewrites the whole room state, so simultaneous host actions can overwrite each other (Durable Objects would fix this).
+- No rate limiting on room creation yet.
 
 ## Match-flow update
 
