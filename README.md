@@ -4,7 +4,9 @@ Host-controlled party games for TikTok Live and shared-screen game nights. Two t
 
 **Live:** https://gamenightza.com
 
-![Screenshot](docs/screenshot.png)  <!-- add a real screenshot -->
+![Screenshot](docs/screenshot1.png)
+![Screenshot](docs/screenshot2.png)
+
 
 **Stack:** React, TypeScript, Cloudflare Workers, Cloudflare D1 (SQLite), Drizzle ORM
 
